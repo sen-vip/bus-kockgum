@@ -1,986 +1,1926 @@
-const state = {
-  files: [],
-  docs: [],
-  allText: "",
-  assignedVehicles: [],
-  foundVehicles: [],
-  docRows: [],
-  vehicleRows: [],
-  requestText: "",
-  checked: false,
-  vehicleSource: "없음",
-};
+'use strict';
 
-const REQUIRED_DOCS = [
-  { key: "assignment", group: "기준자료", name: "차량 및 운전기사 배정 현황", keywords: ["차량 및 운전기사", "배정", "배차", "차량운행계획", "차량보유", "운행차량", "호차", "운전기사"] },
-  { key: "businessLicense", group: "계약 전", name: "여객자동차 운송사업등록증", keywords: ["여객자동차", "운송사업등록증", "전세버스", "운송사업", "등록번호", "대표자"] },
-  { key: "insurance", group: "계약 전", name: "자동차 종합보험 가입증명서", keywords: ["자동차보험", "종합보험", "대인배상", "대물배상", "보험기간", "피보험자", "가입증명"] },
-  { key: "pledge", group: "계약 전", name: "직영차량 운행각서", keywords: ["직영차량", "운행각서", "지입차량", "당사 소유", "직접 운행", "각서"] },
-  { key: "registration", group: "계약 전", name: "자동차 등록원부/등록증", keywords: ["자동차등록원부", "자동차등록증", "검사유효기간", "소유자", "사용본거지", "차명"] },
-  { key: "safetyReport", group: "계약 전", name: "전세버스 교통안전정보 조회결과 통보서", keywords: ["전세버스 교통안전정보", "조회결과 통보서", "교통안전공단", "한국교통안전공단", "종합의견", "발급번호"] },
-  { key: "departureChecklist", group: "출발 전", name: "출발 전 교육 및 차량안전점검표", keywords: ["출발 당일 차량 안전점검표", "차량안전점검표", "출발 전 교육", "운전자 음주여부", "재생타이어", "비상탈출용 망치", "대열운행"] },
-  { key: "etc", group: "기타", name: "기타 안전관리 등 학교 요청 서류", keywords: ["안전관리", "학교 요청", "기타"] },
-];
+// ── DOM 헬퍼 ──────────────────────────────────────────────────
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
 
-const CHECKLIST_ITEMS = [
-  "출발 전 교육 및 차량안전점검표 제출",
-  "운전자격요건 확인",
-  "운전자 음주여부 확인",
-  "실제 배차 차량번호와 배정차량 리스트 일치 확인",
-  "실제 운전자와 배정 운전자 일치 확인",
-  "소화기 2개 이상 비치 확인",
-  "비상탈출용 망치 4개 이상 확인",
-  "앞바퀴 재생타이어 사용 여부 확인",
-  "안전벨트 착용 안내방송 확인",
-  "급출발·급제동 및 대열운행 금지 교육",
-  "차량 간 최소 1분 이상 간격 출발 안내",
-  "교통안전정보 통보서 진위확인",
-];
-
-const PROVINCE = new Set(["서울","부산","대구","인천","광주","대전","울산","세종","경기","강원","충북","충남","전북","전남","경북","경남","제주"]);
-
-const $ = (selector) => document.querySelector(selector);
-const $$ = (selector) => Array.from(document.querySelectorAll(selector));
-
-window.addEventListener("DOMContentLoaded", () => {
-  if (window.pdfjsLib) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-  }
-  bindEvents();
-  renderChecklist();
-  updateFileList();
-  updateStepProgress();
-});
-
-function bindEvents() {
-  $$("[data-scroll-target]").forEach((btn) => {
-    btn.addEventListener("click", () => scrollToTarget(btn.dataset.scrollTarget));
-  });
-
-  const dropZone = $("#dropZone");
-  const fileInput = $("#fileInput");
-  fileInput.addEventListener("change", (e) => addFiles(e.target.files));
-
-  ["dragenter", "dragover"].forEach((type) => {
-    dropZone.addEventListener(type, (e) => { e.preventDefault(); dropZone.classList.add("dragover"); });
-  });
-  ["dragleave", "drop"].forEach((type) => {
-    dropZone.addEventListener(type, (e) => { e.preventDefault(); dropZone.classList.remove("dragover"); });
-  });
-  dropZone.addEventListener("drop", (e) => addFiles(e.dataTransfer.files));
-
-  // 파일 더 추가하기 버튼
-  $("#addMoreBtn").addEventListener("click", () => fileInput.click());
-
-  $("#runCheckBtn").addEventListener("click", runCheck);
-  $("#clearBtn").addEventListener("click", resetAll);
-
-  $("#addVehicleBtn").addEventListener("click", () => {
-    state.assignedVehicles.push({ hocha: `${state.assignedVehicles.length + 1}호차`, vehicleNo: "", driver: "", phone: "", note: "직접추가" });
-    state.vehicleSource = "직접입력";
-    updateVehicleTable();
-  });
-
-  $("#tempVehicleBtn").addEventListener("click", async () => {
-    if (state.foundVehicles.length === 0 && state.allText) {
-      state.foundVehicles = extractVehicleNumbers(state.allText);
-    }
-    if (state.foundVehicles.length === 0 && state.files.length > 0 && !state.allText.trim()) {
-      showToast("서류를 읽고 있어요...");
-      const docs = await extractTextFromFiles(state.files);
-      state.docs = docs;
-      state.allText = docs.map((d) => d.text).join("\n\n");
-      state.foundVehicles = extractVehicleNumbers(state.allText);
-    }
-    if (state.foundVehicles.length === 0) {
-      showToast("자동으로 읽을 수 있는 차량번호를 찾지 못했어요. 직접 입력으로 보정해 주세요.");
-      return;
-    }
-    state.assignedVehicles = state.foundVehicles.map((vehicleNo, i) => ({
-      hocha: `${i + 1}호차`, vehicleNo, driver: "", phone: "", note: "후보 차량"
-    }));
-    state.vehicleSource = "후보";
-    updateVehicleTable("기준자료없음");
-    showToast(`차량번호 후보 ${state.foundVehicles.length}개로 표를 만들었어요.`);
-  });
-
-  $("#copyDocTableBtn").addEventListener("click", () =>
-    copyText(tableRowsToText(state.docRows, ["구분", "서류명", "결과", "콕검 확인 내용", "조치"]), "서류별 결과표를 복사했어요."));
-  $("#copyVehicleTableBtn").addEventListener("click", () =>
-    copyText(vehicleRowsToText(), "차량별 확인표를 복사했어요."));
-  $("#copyRequestBtn").addEventListener("click", () =>
-    copyText($("#requestText").value, "보완요청 문구를 복사했어요."));
-  $("#exportCsvBtn").addEventListener("click", exportToCSV);
-
-  $("#floatTopBtn").addEventListener("click", () => scrollToTarget("top"));
-
-  ["#estimatedPrice", "#contractType"].forEach((sel) => {
-    const el = $(sel);
-    if (el) el.addEventListener("input", updatePriceHint);
-    if (el) el.addEventListener("change", updatePriceHint);
-  });
-
-  // 출발일 변경 → 스텝 진행상태 업데이트
-  $("#startDate").addEventListener("change", updateStepProgress);
-
-  updatePriceHint();
-  window.addEventListener("scroll", toggleFloatTop);
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
-// ─── 진행 단계 업데이트 ───────────────────────────────────────
-function updateStepProgress() {
-  const dateVal = $("#startDate").value;
-  const fileCount = state.files.length;
-  const checked = state.checked;
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes)) return '';
+  if (bytes < 1024) return bytes + 'B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + 'KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + 'MB';
+}
 
-  // Step 1
-  const s1 = $("#stepState1"), b1 = $("#stepBtn1");
-  if (dateVal) {
-    s1.textContent = dateVal;
-    b1.classList.add("done");
-  } else {
-    s1.textContent = "입력 필요";
-    b1.classList.remove("done");
+function showToast(msg, type = 'info') {
+  const t = $('#toast');
+  if (!t) return;
+  t.textContent = msg;
+  t.className = 'toast show ' + type;
+  clearTimeout(t._tid);
+  t._tid = setTimeout(() => t.classList.remove('show'), 3200);
+}
+
+// ── 상수 ──────────────────────────────────────────────────────
+const VERSION = 'v0.2.16';
+const REGION_PREFIXES = new Set([
+  '서울','부산','대구','인천','광주','대전','울산','세종',
+  '경기','강원','충북','충남','전북','전남','경북','경남','제주'
+]);
+
+const DOC_TYPES = {
+  insurance: {
+    label: '보험서류', group: '차량별 필수서류',
+    fileHints: ['보험','공제','계약확인','계약 확인'],
+    keywords: ['조합원 공제','보험계약 확인서','공제(보험)계약','계약기간','유효기간','담보내용','대인','대물','자손','자차','보험기간']
+  },
+  registrationCert: {
+    label: '자동차등록증', group: '차량별 필수서류',
+    fileHints: ['자동차등록증','등록증'],
+    keywords: ['자동차등록증','자동차 등록증','자동차등록번호','차명','차대번호','검사유효기간','사용본거지','승차정원','자동차관리법','등록번호판 교부','등록번호판','봉인','자동차 출고','차량만료일','검사유효기간']
+  },
+  registrationLedger: {
+    label: '자동차등록원부', group: '차량별 필수서류',
+    fileHints: ['자동차등록원부','등록원부','원부'],
+    keywords: ['자동차등록원부','자동차 등록원부','등록원부','갑부','을부','등본','초본','자동차등록번호','검사유효기간','최종소유자']
+  },
+  safetyReport: {
+    label: '교통안전정보 통보서', group: '차량별 필수서류',
+    fileHints: ['안전정보','조회결과','통보서','교통안전'],
+    keywords: ['전세버스 교통안전정보 조회결과 통보서','교통안전정보','조회결과','통보서','한국교통안전공단','자동차검사 만료일','종합결과','버스운전자격']
+  },
+  transport: {
+    label: '자동차운송사업등록증', group: '업체 확인 서류',
+    fileHints: ['운송사업','사업등록증','여객자동차'],
+    keywords: ['자동차운송사업등록증','운송사업등록증','여객자동차운송사업','여객자동차운송사업법','여객자동차','전세버스운송사업','전세버스','사업의 종류','등록번호','등록합니다','상호(법인명)','상호','업종','차고지','등록연월일','법인등록번호','대표자','서울특별시']
+  },
+  pledge: {
+    label: '직영차량 운행각서', group: '업체 확인 서류',
+    fileHints: ['직영','운행각서','각서'],
+    keywords: ['직영차량 운행 각서','직영차량','운행 각서','직영 차량으로만 운행','계약해지','위약금','자동차등록원부','교통안전정보 조회결과서']
+  },
+  directProd: {
+    label: '직접생산확인증명서', group: '계약조건별 서류',
+    fileHints: ['직접생산','직생'],
+    keywords: ['직접생산확인증명서','직접생산','중소기업','공공구매','전세버스','유효기간','세부품명','세부품목']
+  },
+  preCheck: {
+    label: '출발 전 교육 및 차량안전점검표', group: '차량별 필수서류',
+    fileHints: ['안전점검','출발전','출발 전'],
+    keywords: ['안전점검표','출발 전 교육','차량안전점검','점검결과','운전자격요건 확인']
+  },
+  businessRegistration: {
+    label: '사업자등록증', group: '업체 확인 서류',
+    fileHints: ['사업자등록증','사업자등록'],
+    keywords: ['사업자등록증','법인사업자','사업자등록번호','등록번호','법인명','대표자','개업연월일','사업장 소재지','본점 소재지','사업의 종류','업태','종목','전세버스','운수','국세청','세무서장']
   }
+};
 
-  // Step 2
-  const s2 = $("#stepState2"), b2 = $("#stepBtn2");
-  if (fileCount > 0) {
-    s2.textContent = `${fileCount}개 완료`;
-    b2.classList.add("done");
-  } else {
-    s2.textContent = "대기";
-    b2.classList.remove("done");
+const DOC_ORDER = ['directProd','transport','businessRegistration','pledge','insurance','registrationCert','registrationLedger','safetyReport','preCheck'];
+const ST_OK = '확인완료';
+const ST_SUBMIT = '제출됨';
+const ST_DIRECT = '담당자가 직접 확인해주세요';
+const ST_NEED = '보완필요';
+const ST_MISS = '서류에서 못 찾음';
+const ST_OCR = 'PDF 위치 후보';
+const ST_NA = '해당없음';
+
+// ── 상태 ──────────────────────────────────────────────────────
+const state = {
+  assignFiles: [],
+  docFiles: [],
+  docAnalyses: [],
+  assignedVehicles: [],
+  vehicleSource: 'none',
+  vehicleConfirmed: false,
+  allText: '',
+  docRows: [],
+  companyRows: [],
+  vehicleRows: [],
+  vehicleFilter: 'all',
+  requestText: '',
+  checked: false,
+  ocrNoticeAccepted: false,
+  ocrRunning: false,
+};
+
+// ── 텍스트 정규화 ─────────────────────────────────────────────
+function normalizeVehicleNo(v) {
+  return String(v || '').replace(/[^0-9가-힣]/g, '').trim();
+}
+
+function normalizeRoman(str) {
+  return String(str || '')
+    .replace(/[ⅠＩ]/g, 'I')
+    .replace(/[Ⅱ]/g, 'II')
+    .replace(/대인\s*[lㅣ]/gi, '대인I')
+    .replace(/대인\s*1/g, '대인I')
+    .replace(/대인\s*2/g, '대인II')
+    .replace(/대인\s*II/gi, '대인II')
+    .replace(/\s+/g, ' ');
+}
+
+function compact(str) {
+  return normalizeRoman(str).replace(/\s+/g, '').replace(/[\[\]\(\){}·,，:：;；]/g, '');
+}
+
+function hasAnyVehicleNumber(text) {
+  return extractVehicleNumbers(text).length > 0;
+}
+
+function hasAnyCoreKeyword(text) {
+  return DOC_ORDER.some(k => DOC_TYPES[k].keywords.some(kw => String(text || '').includes(kw)));
+}
+
+// ── 차량번호 추출 ─────────────────────────────────────────────
+function extractVehicleNumbers(rawText) {
+  const noSpace = String(rawText || '').replace(/\s+/g, '');
+  const found = new Set();
+  const re = /(?:[가-힣]{2})?\d{2,3}[가-힣]\d{4}/g;
+  let m;
+  while ((m = re.exec(noSpace)) !== null) {
+    const raw = m[0];
+    if (raw.length >= 8 && !REGION_PREFIXES.has(raw.slice(0, 2))) continue;
+    const tail = parseInt(raw.slice(-4), 10);
+    if (tail >= 1900 && tail <= 2099) continue;
+    found.add(raw);
   }
+  const arr = [...found];
+  return arr.filter(v => v.length >= 8 || !arr.some(other => other.length >= 8 && other.endsWith(v)));
+}
 
-  // Step 3
-  const s3 = $("#stepState3"), b3 = $("#stepBtn3");
-  if (checked) {
-    s3.textContent = "완료";
-    b3.classList.add("done");
-  } else if (dateVal && fileCount > 0) {
-    s3.textContent = "시작 가능";
-    b3.classList.remove("done");
-  } else {
-    s3.textContent = "대기";
-    b3.classList.remove("done");
+// ── PDF 텍스트 추출 ────────────────────────────────────────────
+async function extractPdfText(file) {
+  if (file.type.startsWith('image/')) return '';
+  try {
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    let text = '';
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      text += content.items.map(i => i.str).join(' ') + '\n';
+    }
+    return text;
+  } catch (e) {
+    console.warn('PDF 텍스트 추출 실패:', file.name, e);
+    return '';
   }
+}
 
+
+async function extractPdfStructuredText(file) {
+  if (file.type.startsWith('image/')) return '';
+  try {
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    let text = '';
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      const items = content.items
+        .filter(i => String(i.str || '').trim())
+        .map(i => ({ str: String(i.str).trim(), x: i.transform?.[4] || 0, y: i.transform?.[5] || 0 }));
+      items.sort((a, b) => (b.y - a.y) || (a.x - b.x));
+      const rows = [];
+      for (const item of items) {
+        let row = rows.find(r => Math.abs(r.y - item.y) < 5);
+        if (!row) { row = { y: item.y, items: [] }; rows.push(row); }
+        row.items.push(item);
+      }
+      rows.sort((a, b) => b.y - a.y);
+      text += rows.map(r => r.items.sort((a, b) => a.x - b.x).map(i => i.str).join(' ')).join('\n') + '\n';
+    }
+    return text;
+  } catch (e) {
+    console.warn('PDF 구조 텍스트 추출 실패:', file.name, e);
+    return extractPdfText(file);
+  }
+}
+
+async function renderPdfPageToDataUrl(file, pageNo, scale = 1.7) {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const page = await pdf.getPage(pageNo);
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.floor(viewport.width);
+  canvas.height = Math.floor(viewport.height);
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  return { dataUrl: canvas.toDataURL('image/png'), pageCount: pdf.numPages };
+}
+
+
+// ── 페이지 단위 진단: 이미지 중심 서류를 "없음"이 아니라 PDF 위치 후보로 올린다 ──
+async function diagnosePdfPages(file) {
+  if (file.type.startsWith('image/')) {
+    return [{ pageNumber: 1, textLength: 0, hasImage: true, pageType: 'image-heavy', ocrStatus: 'needed', documentTypeCandidates: guessImageDocCandidates('', file.name, 1, 1), reason: '이미지 파일로 업로드됨' }];
+  }
+  try {
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    const pages = [];
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      const text = content.items.map(i => i.str || '').join(' ').trim();
+      let hasImage = false;
+      try {
+        const op = await page.getOperatorList();
+        const ops = pdfjsLib.OPS || {};
+        const imgOps = new Set([ops.paintImageXObject, ops.paintJpegXObject, ops.paintInlineImageXObject, ops.paintImageMaskXObject].filter(v => v !== undefined));
+        hasImage = op.fnArray.some(fn => imgOps.has(fn));
+      } catch (e) {
+        hasImage = text.length < 120;
+      }
+      const core = hasAnyCoreKeyword(text);
+      const textShort = text.length < 80;
+      const broken = isBrokenExtractedText(text);
+      const imageHeavy = hasImage && (textShort || broken || !core);
+      const pageType = imageHeavy ? 'image-heavy' : (hasImage ? 'mixed' : 'text');
+      const candidates = guessImageDocCandidates(text, file.name, p, pdf.numPages);
+      const ocrNeeded = imageHeavy || (hasImage && candidates.length && !core);
+      pages.push({
+        pageNumber: p,
+        textLength: text.length,
+        hasImage,
+        pageType,
+        ocrStatus: ocrNeeded ? 'needed' : 'not-needed',
+        documentTypeCandidates: candidates,
+        reason: ocrNeeded ? makeOcrReason(candidates, textShort, broken, hasImage) : '텍스트 분석 가능',
+        textPreview: text.slice(0, 180)
+      });
+    }
+    return pages;
+  } catch (e) {
+    console.warn('페이지 진단 실패:', file.name, e);
+    return [];
+  }
+}
+
+function isBrokenExtractedText(text) {
+  const t = String(text || '').trim();
+  if (!t) return true;
+  const tokens = t.split(/\s+/).filter(Boolean);
+  const oneChar = tokens.filter(x => /^[가-힣A-Za-z0-9]$/.test(x)).length;
+  return tokens.length > 12 && oneChar / tokens.length > 0.45;
+}
+
+function makeOcrReason(candidates, textShort, broken, hasImage) {
+  const names = candidates.map(docTypeLabel).join('·');
+  if (names) return `${names} 후보 · ${textShort ? '텍스트 부족' : broken ? '텍스트 깨짐' : hasImage ? '이미지 중심' : '추가확인 필요'}`;
+  return `${textShort ? '텍스트 부족' : broken ? '텍스트 깨짐' : '이미지 중심'} · PDF 위치 후보`;
+}
+
+function guessImageDocCandidates(text, filename, pageNumber, pageCount) {
+  const raw = `${filename || ''}\n${text || ''}`;
+  const t = compact(raw);
+  const candidates = new Set();
+  const addIf = (key, patterns) => { if (patterns.some(p => p.test(t) || p.test(raw))) candidates.add(key); };
+
+  addIf('registrationCert', [/자동차등록증/, /자동차관리법/, /검사유효기간/, /등록번호판/, /자동차출고/, /차량만료일/, /구청장/]);
+  addIf('registrationLedger', [/자동차등록원부/, /등록원부/, /등본/, /초본/, /정부24/, /문서확인번호/]);
+  addIf('transport', [/자동차운송사업등록증/, /운송사업등록증/, /여객자동차운송사업/, /여객자동차운송사업법/, /전세버스운송사업/, /등록합니다/, /상호\(?법인명\)?/, /차고지/, /등록연월일/]);
+  addIf('businessRegistration', [/사업자등록증/, /법인사업자/, /사업자등록번호/, /사업의종류/, /업태/, /종목/, /국세청/, /세무서장/]);
+  addIf('preCheck', [/출발전교육/, /차량안전점검표/, /점검결과/, /운전자격요건/, /운전자음주/]);
+  addIf('insurance', [/공제\(?보험\)?계약확인서/, /조합원공제/, /담보내용/, /계약기간/, /유효기간/]);
+  addIf('safetyReport', [/교통안전정보/, /조회결과통보서/, /자동차검사만료일/, /종합결과/, /한국교통안전공단/]);
+
+  // 복합 PDF에서 이미지 페이지만 있고 텍스트가 거의 없으면, 버스 서류에서 자주 이미지로 들어오는 후보를 올린다.
+  // 단정하지 않고 PDF 위치 후보로만 표시한다.
+  if (!candidates.size && String(text || '').trim().length < 80) {
+    if (pageNumber >= 2) ['registrationCert', 'transport', 'businessRegistration'].forEach(k => candidates.add(k));
+  }
+  return [...candidates];
+}
+
+function candidateAnalyses(type) {
+  return state.docAnalyses.filter(a => (a.pageDiagnostics || []).some(p => (p.documentTypeCandidates || []).includes(type) && p.ocrStatus === 'needed'));
+}
+
+function candidateLocationText(type) {
+  const cands = candidateAnalyses(type);
+  if (!cands.length) return '';
+  return cands.map(a => {
+    const pages = (a.pageDiagnostics || []).filter(p => (p.documentTypeCandidates || []).includes(type)).map(p => p.pageNumber);
+    return `${a.name} ${formatPageList(pages)}쪽`;
+  }).join(', ');
+}
+
+function docsLocationText(docs, type) {
+  return (docs || []).map(a => {
+    const pages = type ? (a.pageDiagnostics || []).filter(p => (p.documentTypeCandidates || []).includes(type)).map(p => p.pageNumber) : (a.pageDiagnostics || []).map(p => p.pageNumber);
+    return pages.length ? `${a.name} ${formatPageList(pages)}쪽` : a.name;
+  }).join(', ');
+}
+
+function ocrNeededPages(analysis) {
+  const pages = (analysis.pageDiagnostics || []).filter(p => p.ocrStatus === 'needed').map(p => p.pageNumber);
+  if (pages.length) return pages;
+  return [];
+}
+
+// ── 서류 분류 ─────────────────────────────────────────────────
+function classifyByFilename(name) {
+  const n = String(name || '').replace(/\s+/g, '');
+  for (const key of DOC_ORDER) {
+    if (DOC_TYPES[key].fileHints.some(h => n.includes(h.replace(/\s+/g, '')))) return key;
+  }
+  return 'unknown';
+}
+
+function classifyByText(text, fallback = 'unknown') {
+  const t = String(text || '');
+  const ct = compact(t);
+  // 등록증의 좌상단 '번호판 회수 확인 통보' 스탬프는 분류 가중치에서 제외한다.
+  const lowPriorityStamp = /번호판\s*회수\s*확인\s*통보|등록번호판\s*회수|회수\s*확인/.test(t);
+  let best = { key: fallback, score: fallback === 'unknown' ? 0 : 1 };
+  DOC_ORDER.forEach(key => {
+    let score = DOC_TYPES[key].keywords.reduce((n, kw) => {
+      const k = String(kw || '');
+      return n + ((t.includes(k) || ct.includes(compact(k))) ? 1 : 0);
+    }, 0);
+    if (key === 'registrationCert' && lowPriorityStamp) score += 0; // 문서 버림 금지, 본문 키워드만 반영
+    if (score > best.score) best = { key, score };
+  });
+  return best.key;
+}
+
+function createAnalysis(file) {
+  return {
+    file,
+    name: file.name,
+    size: file.size,
+    type: classifyByFilename(file.name),
+    text: '',
+    ocrText: '',
+    textStatus: '대기',
+    ocrStatus: file.type.startsWith('image/') ? ST_OCR : '대기',
+    needsOcr: file.type.startsWith('image/'),
+    ocrPages: 0,
+    ocrError: '',
+    pageDiagnostics: [],
+    imagePageCount: file.type.startsWith('image/') ? 1 : 0,
+    ocrNeededPageCount: file.type.startsWith('image/') ? 1 : 0,
+  };
+}
+
+function analysisText(a) {
+  return [a.text, a.ocrText].filter(Boolean).join('\n');
+}
+
+function analysesByType(type) {
+  return state.docAnalyses.filter(a => a.type === type);
+}
+
+function docTypeLabel(type) {
+  return DOC_TYPES[type]?.label || '서류종류 후보 없음';
+}
+
+// ── 단계 네비 업데이트 ───────────────────────────────────────
+function updateStepNav() {
+  const s1 = !!($('#startDate')?.value);
+  const s2 = state.assignFiles.length > 0;
+  const s3 = state.vehicleConfirmed && state.assignedVehicles.length > 0;
+  const s4 = state.docFiles.length > 0;
+  const s5 = state.checked;
+  const done = [s1, s2, s3, s4, s5, s5];
+
+  let activeStep = 1;
+  $$('#stepNav .step-item').forEach((el, i) => {
+    el.classList.remove('step-done', 'step-active', 'step-pending');
+    if (done[i]) el.classList.add('step-done');
+    else if (i === 0 || done[i - 1]) { el.classList.add('step-active'); activeStep = i + 1; }
+    else el.classList.add('step-pending');
+  });
+  if (s5) activeStep = 6;
+  $$('#globalStepSidebar .progress-side-link, #resultSidebar .progress-side-link').forEach((el) => {
+    const step = Number(el.dataset.stepSide || (el.getAttribute('href') === '#step6' ? 6 : 0));
+    el.classList.remove('passed', 'current');
+    if (step && step < activeStep) el.classList.add('passed');
+    if (step === activeStep) el.classList.add('current');
+  });
   updateRunBtn();
 }
 
 function updateRunBtn() {
-  const btn = $("#runCheckBtn");
-  const chip = $("#actionStateChip");
-  const dateVal = $("#startDate").value;
-  const fileCount = state.files.length;
-
-  if (!dateVal) {
-    btn.textContent = "출발일을 먼저 입력해주세요";
+  const btn = $('#runCheckBtn');
+  const chip = $('#runStatusChip');
+  if (!btn) return;
+  const hasDate = !!($('#startDate')?.value);
+  const hasVehicles = state.assignedVehicles.length > 0;
+  const hasDocs = state.docFiles.length > 0;
+  if (!hasDate) {
+    btn.textContent = '출발일을 먼저 입력해주세요';
     btn.disabled = true;
-    btn.classList.remove("ready");
-    if (chip) { chip.textContent = "출발일 입력 필요"; chip.className = "help-chip gray"; }
-  } else if (fileCount === 0) {
-    btn.textContent = "서류를 업로드하면 콕검할 수 있어요";
+    btn.className = 'primary-btn run-btn disabled-state';
+    if (chip) { chip.textContent = '출발일 필요'; chip.className = 'help-chip gray'; }
+  } else if (!hasVehicles) {
+    btn.textContent = '배정차량 리스트를 먼저 확인해주세요';
     btn.disabled = true;
-    btn.classList.remove("ready");
-    if (chip) { chip.textContent = "서류 업로드 필요"; chip.className = "help-chip gray"; }
+    btn.className = 'primary-btn run-btn disabled-state';
+    if (chip) { chip.textContent = '차량 확인 필요'; chip.className = 'help-chip gray'; }
+  } else if (!state.vehicleConfirmed) {
+    btn.textContent = '배차 차량 목록을 먼저 확정해주세요';
+    btn.disabled = true;
+    btn.className = 'primary-btn run-btn disabled-state';
+    if (chip) { chip.textContent = '배차 확정 필요'; chip.className = 'help-chip gray'; }
+  } else if (!hasDocs) {
+    btn.textContent = '서류를 업로드하면 콕검할 수 있어요';
+    btn.disabled = true;
+    btn.className = 'primary-btn run-btn disabled-state';
+    if (chip) { chip.textContent = '서류 필요'; chip.className = 'help-chip gray'; }
   } else {
-    btn.textContent = "버스 서류 콕검 시작하기";
+    btn.textContent = '콕검 실행하기';
     btn.disabled = false;
-    btn.classList.add("ready");
-    if (chip) { chip.textContent = "준비 완료"; chip.className = "help-chip blue"; }
+    btn.className = 'primary-btn run-btn';
+    if (chip) { chip.textContent = '준비 완료'; chip.className = 'help-chip green'; }
   }
+  updateAnalysisActionBar();
 }
 
-// ─── 파일 목록 ────────────────────────────────────────────────
-function addFiles(fileList) {
-  Array.from(fileList).forEach((file) => {
-    if (!state.files.some((f) => f.name === file.name && f.size === file.size)) {
-      state.files.push(file);
+// ── 파일 업로드 ───────────────────────────────────────────────
+function isValidUpload(f) {
+  return /pdf|image|png|jpe?g/i.test(f.type) || /\.(pdf|png|jpe?g)$/i.test(f.name);
+}
+
+function addAssignFiles(fileList) {
+  const valid = Array.from(fileList || []).filter(isValidUpload);
+  if (!valid.length) { showToast('PDF 또는 이미지 파일만 올릴 수 있어요.', 'warn'); return; }
+  state.assignFiles.push(...valid);
+  renderAssignFileList();
+  updateStepNav();
+}
+
+function renderAssignFileList() {
+  const wrap = $('#assignFileStatus');
+  if (!wrap) return;
+  if (!state.assignFiles.length) {
+    wrap.className = 'file-status-box empty';
+    wrap.innerHTML = '<span class="status-empty-msg">아직 업로드된 파일이 없어요</span>';
+    return;
+  }
+  const hasImg = state.assignFiles.some(f => f.type.startsWith('image/'));
+  let html = `<div class="fstatus-header"><span class="fstatus-count">배정차량 파일 <strong>${state.assignFiles.length}개</strong> 업로드 완료</span><button class="btn-sm-ghost" onclick="clearAssignFiles()">전체 삭제</button></div><ul class="fstatus-list">`;
+  state.assignFiles.forEach((f, i) => {
+    const isImg = f.type.startsWith('image/');
+    html += `<li class="fstatus-item${isImg ? ' img-file' : ''}"><span class="fi-icon">${isImg ? '🖼' : '📄'}</span><span class="fi-name">${escapeHtml(f.name)}</span><span class="fi-size">${formatBytes(f.size)}</span><button class="btn-icon-x" onclick="removeAssignFile(${i})" title="삭제">×</button></li>`;
+  });
+  html += '</ul>';
+  if (hasImg) html += `<div class="img-warn-box">⚠ 이미지·스캔본은 배정차량 번호를 자동으로 찾기 어려울 수 있어요. 추출 후 직접 보정해주세요.</div>`;
+  wrap.className = 'file-status-box has-files';
+  wrap.innerHTML = html;
+}
+function removeAssignFile(i) { state.assignFiles.splice(i, 1); renderAssignFileList(); updateStepNav(); }
+function clearAssignFiles() { state.assignFiles = []; renderAssignFileList(); updateStepNav(); }
+
+function addDocFiles(fileList) {
+  const valid = Array.from(fileList || []).filter(isValidUpload);
+  if (!valid.length) { showToast('PDF 또는 이미지 파일만 올릴 수 있어요.', 'warn'); return; }
+  valid.forEach(f => { state.docFiles.push(f); state.docAnalyses.push(createAnalysis(f)); });
+  renderDocFileList();
+  updateStepNav();
+}
+
+function renderDocFileList() {
+  const wrap = $('#docFileStatus');
+  if (!wrap) return;
+  if (!state.docAnalyses.length) {
+    wrap.className = 'file-status-box empty';
+    wrap.innerHTML = '<span class="status-empty-msg">아직 업로드된 파일이 없어요</span>';
+    return;
+  }
+  const locationNeeded = state.docAnalyses.filter(a => a.needsOcr || (a.pageDiagnostics || []).some(p => p.ocrStatus === 'needed')).length;
+  const locationPagesTotal = state.docAnalyses.reduce((n, a) => n + ((a.pageDiagnostics || []).filter(p => p.ocrStatus === 'needed').length || (a.needsOcr ? 1 : 0)), 0);
+  let html = `<div class="fstatus-header"><span class="fstatus-count">서류 <strong>${state.docAnalyses.length}개</strong> 업로드 완료</span><div class="file-actions">`;
+  if (locationNeeded) html += `<button class="btn-sm-ocr" onclick="scrollToSourceLocations()">PDF에서 서류 위치 찾기${locationPagesTotal ? ` (${locationPagesTotal}쪽)` : ''}</button>`;
+  html += `<button class="btn-sm-ghost" onclick="clearDocFiles()">전체 삭제</button></div></div>`;
+  html += `<div class="ocr-note">콕검은 텍스트 분석을 먼저 실행합니다. 자동판독이 어려운 이미지 서류는 파일명과 PDF 쪽수 후보로 안내합니다.</div>`;
+  html += `<div class="file-analysis-table"><div class="fat-head"><span>파일명</span><span>서류종류 후보</span><span>페이지 진단</span><span>확인 위치</span><span></span></div>`;
+  state.docAnalyses.forEach((a, i) => {
+    const locText = fileLocationSummary(a);
+    const locChip = locText ? `<span class="analysis-pill warn">${escapeHtml(locText)}</span>` : `<span class="ocr-small muted">진단 후 표시</span>`;
+    html += `<div class="fat-row">
+      <span class="fi-name">${escapeHtml(a.name)} <em>${formatBytes(a.size)}</em></span>
+      <span>${escapeHtml(docTypeLabel(a.type))}</span>
+      <span>${pageDiagSummary(a)}<br>${analysisStatusPill(a.textStatus)}</span>
+      <span>${locChip}</span>
+      <span class="fat-actions"><button class="btn-icon-x" onclick="removeDocFile(${i})" title="삭제">×</button></span>
+    </div>`;
+  });
+  html += '</div>';
+  if (locationNeeded) html += `<div class="img-warn-box">📄 자동판독이 어려운 이미지 서류 ${locationPagesTotal || locationNeeded}쪽이 있어요. 없는 서류로 보지 않고 PDF 쪽수 후보로 안내합니다.</div>`;
+  html += `<div class="upload-nudge">서류 ${state.docAnalyses.length}개 업로드 완료 — 아래 <strong>콕검 실행하기</strong> 버튼을 먼저 눌러주세요.</div>`;
+  wrap.className = 'file-status-box has-files';
+  wrap.innerHTML = html;
+  updateAnalysisActionBar();
+}
+
+function fileLocationSummary(a) {
+  const pages = (a.pageDiagnostics || []).filter(p => p.ocrStatus === 'needed' || (p.documentTypeCandidates || []).length);
+  if (!pages.length) return '';
+  return `PDF ${formatPageList(pages.map(p => p.pageNumber))}쪽`;
+}
+
+function scrollToSourceLocations() {
+  document.getElementById('sourceLocations')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function analysisStatusPill(status) {
+  const cls = status === '텍스트 분석 완료' || status === '쪽수 정리' || status === '필요 없음' ? 'ok' :
+    status === ST_OCR || status === '스캔본으로 보임' || status === '텍스트 부족' ? 'warn' :
+    status === '자동 판독 어려움' ? 'bad' : 'gray';
+  return `<span class="analysis-pill ${cls}">${escapeHtml(status || '대기')}</span>`;
+}
+
+function pageDiagSummary(a) {
+  const pages = a.pageDiagnostics || [];
+  if (!pages.length) return '<span class="ocr-small muted">페이지 진단 대기</span>';
+  const text = pages.filter(p => p.pageType === 'text').length;
+  const mixed = pages.filter(p => p.pageType === 'mixed').length;
+  const img = pages.filter(p => p.pageType === 'image-heavy').length;
+  const need = pages.filter(p => p.ocrStatus === 'needed').length;
+  const cand = [...new Set(pages.flatMap(p => p.documentTypeCandidates || []))].map(docTypeLabel).slice(0, 3).join('·');
+  const parts = [];
+  if (text) parts.push(`텍스트 ${text}쪽`);
+  if (mixed) parts.push(`혼합 ${mixed}쪽`);
+  if (img) parts.push(`이미지 ${img}쪽`);
+  if (need) parts.push(`PDF 위치 후보 ${need}쪽`);
+  return `<span class="page-diag-chip ${need ? 'warn' : 'ok'}">${escapeHtml(parts.join(' · ') || '진단 완료')}</span>${cand ? `<div class="mini-detail">후보: ${escapeHtml(cand)}</div>` : ''}`;
+}
+
+function removeDocFile(i) {
+  state.docFiles.splice(i, 1);
+  state.docAnalyses.splice(i, 1);
+  renderDocFileList();
+  updateStepNav();
+}
+function clearDocFiles() { state.docFiles = []; state.docAnalyses = []; renderDocFileList(); updateStepNav(); }
+
+// ── 배정차량 추출 ─────────────────────────────────────────────
+async function doExtractVehicles() {
+  if (!state.assignFiles.length) { showToast('배정차량 파일을 먼저 업로드해주세요.', 'warn'); return; }
+  const btn = $('#extractVehicleBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '추출 중…'; }
+  let allText = '';
+  for (const f of state.assignFiles) {
+    const structured = await extractPdfStructuredText(f);
+    const plain = await extractPdfText(f);
+    allText += `\n[${f.name} 구조텍스트]\n${structured}\n[${f.name} 일반텍스트]\n${plain}\n`;
+  }
+  const parsedRows = extractAssignedVehicleRows(allText);
+  if (btn) { btn.disabled = false; btn.textContent = '다시 추출하기'; }
+
+  if (!parsedRows.length) {
+    showToast('차량번호를 자동으로 찾지 못했어요. 직접 입력해주세요.', 'warn');
+    state.vehicleSource = 'manual';
+    state.vehicleConfirmed = false;
+    state.assignedVehicles = [{ hocha: '1호차', vehicleNo: '', driver: '', phone: '', note: '직접입력' }];
+  } else {
+    showToast(`배정표에서 ${parsedRows.length}대를 찾았어요. 미리보기에서 확인해주세요.`, 'success');
+    state.vehicleSource = 'auto';
+    state.vehicleConfirmed = false;
+    state.assignedVehicles = parsedRows.map((r, i) => ({
+      hocha: r.hocha || `${i + 1}호차`,
+      vehicleNo: r.vehicleNo || '',
+      driver: r.driver || '',
+      phone: r.phone || '',
+      note: r.confident ? '자동추출' : '확인필요'
+    }));
+  }
+  renderVehicleTable();
+  updateStepNav();
+  setTimeout(() => $('#step3Card')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
+}
+
+function extractAssignedVehicleRows(text) {
+  const lines = String(text || '').split(/\n+/).map(x => x.trim()).filter(Boolean);
+  const rows = [];
+  const seen = new Set();
+
+  // 1) 구조 텍스트의 실제 행에서 우선 추출: 서울72바 7440 전훈열 010-...
+  lines.forEach(line => {
+    const row = parseVehicleAssignmentLine(line);
+    if (row && !seen.has(row.vehicleNo)) {
+      seen.add(row.vehicleNo);
+      rows.push(row);
     }
   });
-  updateFileList();
-}
+  if (rows.length >= 2) return rows;
 
-function updateFileList() {
-  const fileCount = state.files.length;
-  const emptyEl = $("#emptyUpload");
-  const uploadedEl = $("#uploadedArea");
-
-  if (fileCount === 0) {
-    emptyEl.classList.remove("hidden");
-    uploadedEl.classList.add("hidden");
-  } else {
-    emptyEl.classList.add("hidden");
-    uploadedEl.classList.remove("hidden");
-
-    // 제목 업데이트
-    const titleEl = $("#fileStatusTitle");
-    if (titleEl) titleEl.textContent = `서류 ${fileCount}개 업로드 완료`;
-
-    // 파일 목록 렌더링
-    const list = $("#fileList");
-    list.innerHTML = "";
-    state.files.forEach((file, index) => {
-      const li = document.createElement("li");
-      li.className = "file-item";
-      const isImage = /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(file.name);
-      li.innerHTML = `<span>${isImage ? "🖼️" : "📄"} ${escapeHtml(file.name)} <small>(${formatBytes(file.size)})</small>${isImage ? ' <span class="img-badge">이미지</span>' : ""}</span><button type="button" aria-label="파일 삭제">삭제</button>`;
-      li.querySelector("button").addEventListener("click", () => {
-        state.files.splice(index, 1);
-        updateFileList();
-      });
-      list.appendChild(li);
-    });
-
-    // 이미지 경고
-    const hasImage = state.files.some((f) => /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(f.name));
-    const warnEl = $("#imageWarning");
-    if (warnEl) warnEl.classList.toggle("hidden", !hasImage);
+  // 2) 표가 컬럼 단위로 섞인 경우: 접두부+운전자 목록과 뒷번호+전화번호 목록을 재조립
+  const prefixDriver = [];
+  const pdRe = /([가-힣]{2}\s?\d{2,3}\s?[가-힣])\s+([가-힣]{2,4})(?=\s|$)/g;
+  lines.forEach(line => {
+    let m;
+    while ((m = pdRe.exec(line)) !== null) {
+      const driver = cleanDriverName(m[2]);
+      if (driver) prefixDriver.push({ prefix: normalizeVehicleNo(m[1]), driver });
+    }
+  });
+  const tailPhone = [];
+  const tpRe = /\b(\d{4})\b\s+(0\d{1,2}-?\d{3,4}-?\d{4})/g;
+  lines.forEach(line => {
+    let m;
+    while ((m = tpRe.exec(line)) !== null) tailPhone.push({ tail: m[1], phone: normalizePhone(m[2]) });
+  });
+  if (prefixDriver.length && tailPhone.length) {
+    const n = Math.min(prefixDriver.length, tailPhone.length);
+    const rebuilt = [];
+    for (let i = 0; i < n; i++) {
+      const vehicleNo = normalizeVehicleNo(prefixDriver[i].prefix + tailPhone[i].tail);
+      rebuilt.push({ hocha: `${i + 1}호차`, vehicleNo, driver: prefixDriver[i].driver, phone: tailPhone[i].phone, confident: false });
+    }
+    return rebuilt;
   }
 
-  // 스텝 진행 상태 업데이트
-  updateStepProgress();
+  // 3) 마지막 fallback: 차량번호만이라도 추출
+  return extractVehicleNumbers(text).map((v, i) => ({ hocha: `${i + 1}호차`, vehicleNo: v, driver: '', phone: '', confident: false }));
 }
 
-// ─── 콕검 실행 ────────────────────────────────────────────────
+function parseVehicleAssignmentLine(line) {
+  const raw = String(line || '').replace(/\s+/g, ' ').trim();
+  if (!raw || /차량번호\s*운전자|회사명|전화번호/.test(raw)) return null;
+  const phoneMatch = raw.match(/0\d{1,2}-?\d{3,4}-?\d{4}/);
+  const phone = phoneMatch ? normalizePhone(phoneMatch[0]) : '';
+
+  let vehicleNo = '';
+  const full = raw.match(/[가-힣]{2}\s?\d{2,3}\s?[가-힣]\s?\d{4}/);
+  if (full) vehicleNo = normalizeVehicleNo(full[0]);
+  if (!vehicleNo) {
+    const split = raw.match(/([가-힣]{2}\s?\d{2,3}\s?[가-힣])\s+(\d{4})/);
+    if (split) vehicleNo = normalizeVehicleNo(split[1] + split[2]);
+  }
+  if (!vehicleNo) return null;
+
+  let tail = raw;
+  if (phone) tail = tail.replace(phoneMatch[0], ' ');
+  tail = tail.replace(/[가-힣]{2}\s?\d{2,3}\s?[가-힣]\s?\d{4}/g, ' ')
+             .replace(/[가-힣]{2}\s?\d{2,3}\s?[가-힣]\s+\d{4}/g, ' ')
+             .replace(/\b\d{4}\b/g, ' ')
+             .replace(/삼우고속관광|주식회사|\(주\)|\(\d+대\)|회사명|차량번호|운전자성명|전화번호/g, ' ')
+             .replace(/[()\[\]<>:·,]/g, ' ')
+             .trim();
+  const names = tail.match(/[가-힣]{2,4}/g) || [];
+  const driver = cleanDriverName(names[names.length - 1] || '');
+  return { hocha: '', vehicleNo, driver, phone, confident: !!(driver || phone) };
+}
+
+function cleanDriverName(name) {
+  const n = String(name || '').trim();
+  if (!n || /회사|차량|번호|전화|운전자|성명|고속|관광|주식|대청|강릉|일대/.test(n)) return '';
+  return n;
+}
+function normalizePhone(p) {
+  const digits = String(p || '').replace(/[^0-9]/g, '');
+  if (digits.length === 11) return digits.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3');
+  if (digits.length === 10) return digits.replace(/(\d{2,3})(\d{3,4})(\d{4})/, '$1-$2-$3');
+  return p || '';
+}
+
+function renderVehicleTable() {
+  const wrap = $('#vehicleTableWrap');
+  const empty = $('#vehicleEmpty');
+  const chip = $('#vehicleCountChip');
+  const note = $('#vehicleSourceNote');
+  if (!state.assignedVehicles.length) {
+    wrap?.classList.add('hidden'); empty?.classList.remove('hidden');
+    if (chip) { chip.textContent = '대기 중'; chip.className = 'help-chip gray'; }
+    if (note) note.className = 'source-note hidden';
+    return;
+  }
+  wrap?.classList.remove('hidden'); empty?.classList.add('hidden');
+  if (chip) { chip.textContent = state.vehicleConfirmed ? `${state.assignedVehicles.length}대 확정` : `${state.assignedVehicles.length}대 확인 중`; chip.className = state.vehicleConfirmed ? 'help-chip ok' : 'help-chip blue'; }
+  if (note) {
+    note.classList.remove('hidden');
+    if (state.vehicleConfirmed) {
+      note.innerHTML = `<div class="source-note-main">배차 확정 완료 · <strong>${state.assignedVehicles.length}대</strong> 기준으로 콕검을 진행합니다.</div>`;
+      note.className = 'source-note confirmed';
+    } else if (state.vehicleSource === 'auto') {
+      const need = state.assignedVehicles.filter(v => v.note === '확인필요' || !v.driver || !v.phone).length;
+      note.innerHTML = `<div class="source-note-main">배정표에서 <strong>${state.assignedVehicles.length}대</strong> 차량을 찾았습니다. 아래 내용이 맞으면 <strong>이 차량 목록으로 확정</strong>을 눌러주세요.${need ? ` <span class="note-warn">${need}건 확인 필요</span>` : ''}</div><div class="source-note-actions"><button id="applyExtractedVehiclesBtn" class="btn-sm-ghost" type="button">이대로 적용</button><button id="editExtractedVehiclesBtn" class="btn-sm-ghost" type="button">직접 수정</button></div>`;
+      note.className = 'source-note auto preview-note';
+      setTimeout(() => {
+        $('#applyExtractedVehiclesBtn')?.addEventListener('click', () => showToast('현재 미리보기 내용이 적용되어 있어요. 필요하면 표에서 바로 수정하세요.', 'success'));
+        $('#editExtractedVehiclesBtn')?.addEventListener('click', () => $('#vehicleTbody input')?.focus());
+      }, 0);
+    }
+    else { note.textContent = '직접 입력으로 보정한 배정차량입니다. 확인 후 이 차량 목록으로 확정해주세요.'; note.className = 'source-note manual'; }
+  }
+  const tbody = $('#vehicleTbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  const locked = state.vehicleConfirmed;
+  state.assignedVehicles.forEach((v, i) => {
+    const tr = document.createElement('tr');
+    tr.className = locked ? 'vehicle-row-locked' : '';
+    const disabled = locked ? 'disabled aria-disabled="true"' : '';
+    tr.innerHTML = `
+      <td><input class="tbl-input" value="${escapeHtml(v.hocha || '')}" oninput="patchVehicle(${i},'hocha',this.value)" ${disabled} /></td>
+      <td><input class="tbl-input vno-input" value="${escapeHtml(v.vehicleNo || '')}" oninput="patchVehicle(${i},'vehicleNo',this.value)" placeholder="예: 서울72바5789" ${disabled} /></td>
+      <td><input class="tbl-input" value="${escapeHtml(v.driver || '')}" oninput="patchVehicle(${i},'driver',this.value)" placeholder="성명" ${disabled} /></td>
+      <td><input class="tbl-input" value="${escapeHtml(v.phone || '')}" oninput="patchVehicle(${i},'phone',this.value)" placeholder="010-0000-0000" ${disabled} /></td>
+      <td><span class="badge-src">${escapeHtml(locked ? '확정됨' : (v.note || ''))}</span></td>
+      <td><button class="btn-del" onclick="removeVehicleRow(${i})" ${locked ? 'disabled' : ''}>삭제</button></td>`;
+    tbody.appendChild(tr);
+  });
+  const confirmBtn = $('#confirmVehiclesBtn');
+  if (confirmBtn) confirmBtn.textContent = locked ? '확정 해제하고 수정' : '이 차량 목록으로 확정';
+  const addBtn = $('#addVehicleBtn');
+  if (addBtn) {
+    addBtn.disabled = locked;
+    addBtn.classList.toggle('disabled-state', locked);
+  }
+}
+
+function patchVehicle(i, field, val) {
+  if (!state.assignedVehicles[i]) return;
+  state.assignedVehicles[i][field] = val;
+  state.assignedVehicles[i].note = '수동보정';
+  state.vehicleConfirmed = false;
+  const rows = $$('#vehicleTbody tr');
+  if (rows[i]) {
+    const b = rows[i].querySelector('.badge-src');
+    if (b) b.textContent = '수동보정';
+  }
+}
+function removeVehicleRow(i) { if (state.vehicleConfirmed) { showToast('삭제하려면 먼저 확정을 해제해주세요.', 'warn'); return; } state.assignedVehicles.splice(i, 1); state.vehicleConfirmed = false; renderVehicleTable(); updateStepNav(); }
+function addVehicleRow() { if (state.vehicleConfirmed) { showToast('차량을 추가하려면 먼저 확정을 해제해주세요.', 'warn'); return; } state.assignedVehicles.push({ hocha: `${state.assignedVehicles.length + 1}호차`, vehicleNo: '', driver: '', phone: '', note: '직접입력' }); state.vehicleSource = 'manual'; state.vehicleConfirmed = false; renderVehicleTable(); updateStepNav(); setTimeout(() => { const inputs = $$('#vehicleTbody tr:last-child input'); inputs[1]?.focus(); }, 0); }
+function confirmVehicleList() {
+  if (state.vehicleConfirmed) {
+    state.vehicleConfirmed = false;
+    renderVehicleTable();
+    updateStepNav();
+    showToast('배차 확정을 해제했습니다. 수정 후 다시 확정해주세요.', 'info');
+    return;
+  }
+  if (!state.assignedVehicles.length) { showToast('확정할 배정차량이 없습니다.', 'warn'); return; }
+  const missing = state.assignedVehicles.filter(v => !normalizeVehicleNo(v.vehicleNo)).length;
+  if (missing) { showToast(`차량번호가 비어 있는 행 ${missing}건을 먼저 확인해주세요.`, 'warn'); return; }
+  state.vehicleConfirmed = true;
+  state.vehicleSource = state.vehicleSource === 'none' ? 'manual' : state.vehicleSource;
+  renderVehicleTable();
+  updateStepNav();
+  showToast(`배차 차량 ${state.assignedVehicles.length}대가 확정되었습니다.`, 'success');
+}
+
+// ── 빠른 콕검 ─────────────────────────────────────────────────
 async function runCheck() {
-  const startDate = $("#startDate").value;
-  if (!startDate) {
-    showToast("출발일을 먼저 입력해 주세요.");
-    scrollToTarget("basicInfo");
-    return;
-  }
-  if (state.files.length === 0) {
-    showToast("서류를 먼저 업로드해 주세요.");
-    scrollToTarget("uploadDocs");
-    return;
-  }
-
-  const btn = $("#runCheckBtn");
-  btn.disabled = true;
-  btn.textContent = "서류를 읽고 있어요...";
-  $("#runMessage").textContent = "차량번호와 유효기간을 확인하는 중입니다. 잠시만 기다려 주세요.";
-
+  const startDate = $('#startDate')?.value;
+  if (!startDate) { showToast('출발일을 먼저 입력해주세요.', 'warn'); return; }
+  if (!state.assignedVehicles.length) { showToast('배정차량 리스트를 먼저 확인해주세요.', 'warn'); return; }
+  if (!state.vehicleConfirmed) { showToast('배차 차량 목록을 먼저 확정해주세요.', 'warn'); $('#step3Card')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+  if (!state.docAnalyses.length) { showToast('서류를 먼저 업로드해주세요.', 'warn'); return; }
+  const btn = $('#runCheckBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '분석 중…'; }
+  const msg = $('#runMessage');
+  if (msg) msg.textContent = '페이지별로 텍스트형/이미지형을 먼저 진단합니다. 자동판독이 어려운 서류는 PDF 쪽수 후보를 안내합니다.';
   try {
-    state.docs = await extractTextFromFiles(state.files);
-    state.allText = state.docs.map((d) => d.text).join("\n\n");
-
-    const hasReadable = state.docs.some((d) => d.readable);
-    if (!hasReadable) {
-      showToast("글자를 읽을 수 없는 서류예요. 배정차량을 직접 입력으로 보정해 주세요.");
-    }
-
-    classifyDocuments();
-
-    // 배정차량 추출 (수동 입력 상태가 아닐 때만 덮어쓰기)
-    if (state.vehicleSource !== "직접입력") {
-      const extracted = extractAssignedVehicleList(state.allText);
-      if (extracted.length > 0) {
-        state.assignedVehicles = extracted;
-        state.vehicleSource = extracted[0]?.note || "자동추출";
-      } else {
-        state.vehicleSource = "없음";
+    for (const a of state.docAnalyses) {
+      if (!a.pageDiagnostics.length) {
+        a.textStatus = '페이지 진단 중'; renderDocFileList();
+        a.pageDiagnostics = await diagnosePdfPages(a.file);
+        a.imagePageCount = a.pageDiagnostics.filter(p => p.pageType === 'image-heavy').length;
+        a.ocrNeededPageCount = a.pageDiagnostics.filter(p => p.ocrStatus === 'needed').length;
       }
+      if (!a.text && !a.file.type.startsWith('image/')) {
+        a.textStatus = '텍스트 추출 중'; renderDocFileList();
+        a.text = await extractPdfText(a.file);
+      }
+      const text = analysisText(a);
+      const filenameType = classifyByFilename(a.name);
+      const candidateTypes = [...new Set((a.pageDiagnostics || []).flatMap(p => p.documentTypeCandidates || []))];
+      a.type = classifyByText(text, filenameType !== 'unknown' ? filenameType : (candidateTypes[0] || 'unknown'));
+      const insufficient = !text.trim() || text.trim().length < 80 || !hasAnyCoreKeyword(text);
+      const pageOcrNeeded = (a.pageDiagnostics || []).some(p => p.ocrStatus === 'needed');
+      if (a.file.type.startsWith('image/')) { a.textStatus = '스캔본으로 보임'; a.needsOcr = true; a.ocrStatus = a.ocrStatus === '쪽수 정리' ? '쪽수 정리' : ST_OCR; }
+      else if (pageOcrNeeded) { a.textStatus = insufficient ? (text.trim() ? '텍스트 부족' : '이미지 중심 서류') : '이미지 서류 포함'; a.needsOcr = true; if (a.ocrStatus !== '쪽수 정리') a.ocrStatus = ST_OCR; }
+      else if (insufficient) { a.textStatus = text.trim() ? '텍스트 부족' : '스캔본으로 보임'; a.needsOcr = true; if (a.ocrStatus !== '쪽수 정리') a.ocrStatus = ST_OCR; }
+      else { a.textStatus = '텍스트 분석 완료'; if (a.ocrStatus === '대기') a.ocrStatus = '필요 없음'; }
     }
-
-    state.foundVehicles = extractVehicleNumbers(state.allText);
-    updateVehicleTable(state.assignedVehicles.length > 0 ? "확인" : "기준자료없음");
-    buildResults();
+    rebuildAllResults();
     showResultSections();
-
     state.checked = true;
-    updateStepProgress();
-    scrollToTarget("resultSummary");
-    showToast("콕검 결과를 만들었어요.");
-  } catch (err) {
-    console.error(err);
-    showToast("일부 서류를 읽지 못했어요. 직접확인으로 표시해 주세요.");
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "버스 서류 콕검 시작하기";
-    btn.classList.add("ready");
-    $("#runMessage").textContent = "다시 콕검하려면 버튼을 눌러 주세요.";
+    updateStepNav();
+    renderDocFileList();
+    if (btn) { btn.textContent = '콕검 실행하기'; btn.disabled = false; }
+    showToast('콕검이 완료됐어요. 제출파일 정리부터 확인해주세요.', 'success');
+    setTimeout(() => $('#step6')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+  } catch (e) {
+    console.error(e);
+    if (btn) { btn.textContent = '콕검 실행하기'; btn.disabled = false; }
+    showToast('오류가 발생했어요. 다시 시도해주세요.', 'warn');
   }
 }
 
-async function extractTextFromFiles(files) {
-  const results = [];
-  for (const file of files) {
-    try {
-      const lower = file.name.toLowerCase();
-      if (lower.endsWith(".pdf")) {
-        const text = await extractPdfText(file);
-        results.push({ name: file.name, type: "pdf", text, readable: Boolean(text.trim()) });
-      } else {
-        results.push({ name: file.name, type: "image", text: `이미지 파일: ${file.name}`, readable: false });
+// ── 선택형 OCR ────────────────────────────────────────────────
+async function confirmOcrNotice() {
+  if (state.ocrNoticeAccepted) return true;
+  const ok = confirm('고급 글자 판독은 시간이 걸릴 수 있습니다.\n\n업로드한 파일 내용은 외부 서버로 전송하지 않고 현재 브라우저에서 분석합니다.\n단, 글자 판독 도구에 필요한 라이브러리와 언어 모델 파일은 CDN에서 불러올 수 있습니다.\n\n스캔 품질에 따라 정확하지 않을 수 있습니다. 자동판정이 아니라 참고용입니다. 계속 진행할까요?');
+  if (ok) state.ocrNoticeAccepted = true;
+  return ok;
+}
+
+async function runOcrForNeeded() {
+  const targets = state.docAnalyses.map((a, i) => ({ a, i })).filter(x => x.a.needsOcr && x.a.ocrStatus !== '쪽수 정리');
+  if (!targets.length) { showToast('PDF 쪽수 후보가 없어요.', 'info'); return; }
+  if (!(await confirmOcrNotice())) return;
+  for (const t of targets) await runOcrForIndex(t.i, true);
+}
+
+async function runOcrForIndex(i, alreadyConfirmed = false) {
+  const a = state.docAnalyses[i];
+  if (!a) return;
+  if (!alreadyConfirmed && !(await confirmOcrNotice())) return;
+  if (!window.Tesseract) { showToast('글자 판독 도구를 불러오지 못했어요. 네트워크 접속을 확인해주세요.', 'warn'); return; }
+  state.ocrRunning = true;
+  a.ocrStatus = '글자 판독 준비 중';
+  renderDocFileList();
+  const msg = $('#runMessage');
+  try {
+    let ocrText = '';
+    if (a.file.type.startsWith('image/')) {
+      a.ocrStatus = '글자 판독 중'; renderDocFileList();
+      if (msg) msg.textContent = `${a.name} 글자 판독 중입니다.`;
+      const url = URL.createObjectURL(a.file);
+      try { ocrText = await recognizeImage(url, a); }
+      finally { URL.revokeObjectURL(url); }
+      a.ocrPages = 1;
+    } else {
+      if (!a.pageDiagnostics.length) a.pageDiagnostics = await diagnosePdfPages(a.file);
+      const buf = await a.file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      let targetPages = ocrNeededPages(a);
+      if (!targetPages.length) targetPages = Array.from({ length: Math.min(pdf.numPages, 3) }, (_, idx) => idx + 1);
+      targetPages = targetPages.slice(0, 10);
+      for (let idx = 0; idx < targetPages.length; idx++) {
+        const p = targetPages[idx];
+        a.ocrStatus = `${idx + 1} / ${targetPages.length}쪽 글자 판독 중`; renderDocFileList();
+        if (msg) msg.textContent = `${a.name} · ${p}쪽 글자 판독 중입니다.`;
+        const page = await pdf.getPage(p);
+        const viewport = page.getViewport({ scale: 1.7 });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+        ocrText += `
+[${a.name} ${p}쪽 글자판독]
+` + await recognizeImage(canvas.toDataURL('image/png'), a);
       }
-    } catch (e) {
-      results.push({ name: file.name, type: "error", text: "", readable: false });
+      a.ocrPages = targetPages.length;
+    }    a.ocrText = ocrText;
+    a.type = classifyByText(analysisText(a), classifyByFilename(a.name));
+    a.ocrStatus = '쪽수 정리';
+    a.needsOcr = false;
+    (a.pageDiagnostics || []).forEach(p => { if (p.ocrStatus === 'needed') p.ocrStatus = 'done'; });
+    if (!a.textStatus || ['대기','텍스트 부족','스캔본으로 보임'].includes(a.textStatus)) a.textStatus = a.text ? a.textStatus : '스캔본으로 보임';
+    showToast(`${a.name} 쪽수 정리`, 'success');
+  } catch (e) {
+    console.error('자동 판독 어려움', e);
+    a.ocrError = e.message || String(e);
+    a.ocrStatus = '자동 판독 어려움';
+    showToast('자동 판독이 어려워 직접 확인 항목으로 표시합니다.', 'warn');
+  } finally {
+    state.ocrRunning = false;
+    renderDocFileList();
+    if (state.checked) {
+      rebuildAllResults();
+      showResultSections();
+      generateAndShowSupplement();
     }
+    if (msg) msg.textContent = '글자 판독 결과가 반영되었습니다. 불확실한 항목은 직접 확인 항목으로 표시됩니다.';
   }
-  return results;
 }
 
-async function extractPdfText(file) {
-  if (!window.pdfjsLib) return "";
-  const buffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-  let fullText = "";
-  for (let p = 1; p <= pdf.numPages; p++) {
-    const page = await pdf.getPage(p);
-    const content = await page.getTextContent();
-    const pageText = content.items.map((item) => item.str).join(" ");
-    fullText += `\n--- ${file.name} / ${p}쪽 ---\n${pageText}`;
-  }
-  return normalizeText(fullText);
-}
-
-// ─── 결과 표시/숨김 ──────────────────────────────────────────
-function showResultSections() {
-  $$(".result-panel").forEach((s) => s.classList.remove("hidden"));
-  const notice = $("#preCheckNotice");
-  if (notice) notice.classList.add("hidden");
-}
-
-// ─── 차량 추출: 2단계 알고리즘 ──────────────────────────────
-function extractVehicleNumbers(rawText) {
-  const found = new Set();
-
-  // Phase 1: 전체 공백 제거 → 완전한 차량번호 추출
-  const compact = rawText.replace(/[\s\u00a0]+/g, "");
-  const fullPat = /([가-힣]{2})?(\d{2,3})([가-힣])(\d{4})/g;
-  let m;
-  while ((m = fullPat.exec(compact)) !== null) {
-    const [, prefix, digits, han, tail] = m;
-    if (prefix && !PROVINCE.has(prefix)) continue;
-    found.add((prefix || "") + digits + han + tail);
-  }
-
-  // Phase 2: 분리된 head(시도+번호+한글) + tail(4자리) 페어링
-  // 예: "서울72바" 와 "7440" 이 다른 셀/줄에 있는 경우
-  const matchedTails = new Set([...found].map((v) => v.slice(-4)));
-  const orphanHeads = [];
-  const orphanTails = [];
-
-  for (const line of rawText.split("\n")) {
-    // Head: 행에서 공백 제거 후 시도+숫자+한글 (뒤에 숫자 없는 것)
-    const lc = line.replace(/\s+/g, "");
-    const headPat = /([가-힣]{2})(\d{2,3})([가-힣])(?!\d)/g;
-    let hm;
-    while ((hm = headPat.exec(lc)) !== null) {
-      const [, pref, dig, han] = hm;
-      if (!PROVINCE.has(pref)) continue;
-      const headStr = pref + dig + han;
-      if ([...found].some((v) => v.startsWith(headStr))) continue;
-      orphanHeads.push(headStr);
+async function recognizeImage(src, analysis) {
+  const result = await Tesseract.recognize(src, 'kor+eng', {
+    logger: m => {
+      if (m.status && analysis) {
+        const pct = m.progress ? ` ${Math.round(m.progress * 100)}%` : '';
+        analysis.ocrStatus = `${m.status}${pct}`;
+        renderDocFileList();
+      }
     }
-
-    // Tail: 원본 행에서 숫자·하이픈에 둘러싸이지 않은 4자리
-    // 하이픈 앞뒤로 붙으면 전화번호 구성요소로 보고 제외
-    const tailPat = /(?<![-\d])(\d{4})(?![-\d])/g;
-    let tm;
-    while ((tm = tailPat.exec(line)) !== null) {
-      const tail = tm[1];
-      const num = parseInt(tail, 10);
-      if (num >= 1900 && num <= 2099) continue; // 연도 제외
-      if (matchedTails.has(tail)) continue;       // Phase1에서 이미 매칭된 꼬리
-      orphanTails.push(tail);
-    }
-  }
-
-  // 문서 순서대로 페어링
-  const pairCount = Math.min(orphanHeads.length, orphanTails.length);
-  for (let i = 0; i < pairCount; i++) {
-    found.add(orphanHeads[i] + orphanTails[i]);
-  }
-
-  return [...found];
-}
-
-// ─── 배정차량 리스트 추출 ────────────────────────────────────
-function extractAssignedVehicleList(text) {
-  const vehicles = extractVehicleNumbers(text);
-  if (vehicles.length === 0) return [];
-
-  const isAssignmentDoc = /차량\s*및\s*운전기사|배정|배차|운행차량|차량운행계획|차량보유|호차/.test(text);
-  const sourceNote = isAssignmentDoc ? "자동추출" : "후보 차량";
-
-  return vehicles.map((vehicleNo, index) => {
-    // 전체 차량번호로 컨텍스트 검색 → 없으면 head로 재검색
-    let context = getContextAround(text, vehicleNo, 80);
-    if (!context) {
-      const headOnly = vehicleNo.match(/^([가-힣]{0,2}\d{2,3}[가-힣])/)?.[1] || "";
-      if (headOnly) context = getContextAroundOriginal(text, headOnly, 80);
-    }
-    const driver = extractDriverFromContext(context);
-    const phone = extractPhoneFromContext(context);
-    const hocha = extractHochaFromContext(context) || `${index + 1}호차`;
-    return { hocha, vehicleNo, driver, phone, note: sourceNote };
   });
+  return result?.data?.text || '';
 }
 
-// 원본 텍스트(줄 단위)에서 keyword가 있는 줄 반환
-function getContextAroundOriginal(rawText, keyword, radius = 80) {
-  const compactKw = keyword.replace(/\s+/g, "");
-  for (const line of rawText.split("\n")) {
-    if (line.replace(/\s+/g, "").includes(compactKw)) {
-      return line;
-    }
-  }
-  return "";
-}
-
-// ─── 나머지 함수들 (v0.1.2에서 유지) ────────────────────────
-function classifyDocuments() {
-  const docsByKey = {};
-  for (const doc of REQUIRED_DOCS) {
-    const matches = doc.keywords.filter((kw) => state.allText.includes(kw));
-    docsByKey[doc.key] = { found: matches.length > 0, matches };
-  }
-  state.docsByKey = docsByKey;
-}
-
-function buildResults() {
-  const startDate = $("#startDate").value;
-  const endDate = $("#endDate").value || startDate;
-  const assignmentMode = state.assignedVehicles.length > 0;
-
-  state.docRows = REQUIRED_DOCS.map((doc) => evaluateDocument(doc, state.docsByKey[doc.key], startDate));
-  state.docRows.push(...evaluateContractConditionRows());
-
-  if (!assignmentMode) {
-    const row = state.docRows.find((r) => r.key === "assignment");
-    if (row) {
-      row.status = "기준자료없음";
-      row.detail = "배정차량 리스트를 찾지 못했습니다.";
-      row.action = "배정차량 리스트 추가 제출 또는 임시확인";
-    }
-  }
-
-  state.vehicleRows = state.assignedVehicles.map((vehicle) => {
-    const vehicleNo = normalizeVehicleNo(vehicle.vehicleNo);
-    const insurance = checkVehicleInDoc(vehicleNo, "insurance");
-    const registration = checkVehicleInDoc(vehicleNo, "registration");
-    const safetyReport = checkVehicleInDoc(vehicleNo, "safetyReport");
-    const driverMatch = checkDriverMatch(vehicle.driver, state.allText, safetyReport.status);
-    const inspection = checkInspectionValidity(vehicleNo, state.allText, startDate);
-    const finalStatus =
-      [insurance, registration, safetyReport, driverMatch, inspection].some((x) => ["보완필요", "찾지 못함"].includes(x.status))
-        ? "보완필요"
-        : [insurance, registration, safetyReport, driverMatch, inspection].some((x) => ["직접확인", "기준자료없음"].includes(x.status))
-        ? "직접확인"
-        : "확인";
-    return { ...vehicle, vehicleNo, insurance, registration, safetyReport, driverMatch, inspection, finalStatus };
-  });
-
+// ── 결과 빌드 ─────────────────────────────────────────────────
+function rebuildAllResults() {
+  const startDate = $('#startDate')?.value;
+  const endDate = $('#endDate')?.value || '';
+  state.allText = state.docAnalyses.map(analysisText).join('\n\n');
+  state.docRows = buildDocumentRows();
+  state.companyRows = buildCompanyRows(startDate, endDate);
+  state.vehicleRows = state.assignedVehicles.map(v => buildVehicleRow(v, startDate, endDate));
   renderSummary(startDate, endDate);
+  renderRequiredChecklist();
+  refreshResultSidebar();
+  renderCompanySummary();
   renderDocumentStatus();
   renderVehicleMatches();
-  state.requestText = generateSupplementRequestText();
-  $("#requestText").value = state.requestText;
+  generateAndShowSupplement();
 }
 
-function evaluateDocument(doc, detected, startDate) {
-  let status = detected?.found ? "확인" : "찾지 못함";
-  let detail = detected?.found ? `${detected.matches.slice(0, 3).join(", ")} 문구 확인` : "관련 서류를 찾지 못했습니다.";
-  let action = detected?.found ? "완료" : "제출 여부 확인";
-
-  if (doc.key === "assignment" && detected?.found) {
-    detail = `배정차량 ${state.assignedVehicles.length || 0}대 추출`;
-    action = "기준자료";
-  }
-  if (doc.key === "insurance" && detected?.found) {
-    const period = checkPeriodValidity(state.allText, startDate);
-    if (period.status !== "확인") {
-      status = period.status;
-      detail = `보험 관련 문구 확인, ${period.detail}`;
-      action = "보험기간 직접 확인";
-    }
-  }
-  if (doc.key === "pledge" && detected?.found) {
-    const hasDirect = /직영차량|당사\s*소유|직접\s*운행/.test(state.allText);
-    const hasJip = /지입차량\s*불가|지입/.test(state.allText);
-    if (!hasDirect && !hasJip) {
-      status = "직접확인";
-      detail = "각서 관련 문구는 있으나 직영차량/지입차량 불가 문구 확인이 필요합니다.";
-      action = "직영차량 문구 확인";
-    } else {
-      detail = hasJip ? "직영차량 및 지입차량 관련 문구 확인" : "직영차량 관련 문구 확인";
-    }
-  }
-  if (doc.key === "safetyReport" && detected?.found) {
-    detail = state.allText.includes("종합의견") ? "교통안전정보·종합의견 문구 확인" : "교통안전정보 통보서 관련 문구 확인";
-    action = "진위확인 필요";
-  }
-  if (doc.key === "departureChecklist") {
-    if (detected?.found) {
-      const hasResult = /적합|부적합|실시|여|부|확인/.test(state.allText);
-      status = hasResult ? "확인" : "직접확인";
-      detail = hasResult ? "출발 전 점검표 및 점검결과 관련 문구 확인" : "점검표 양식은 확인되나 기재 여부 확인 필요";
-      action = "출발 전 담당자 확인";
-    } else {
-      status = "출발전제출";
-      detail = "출발 전까지 제출받아야 하는 서류입니다.";
-      action = "출발 전 제출 관리";
-    }
-  }
-  if (doc.key === "etc") {
-    status = "직접확인";
-    detail = "학교 요청 서류는 계약 조건에 따라 담당자 확인이 필요합니다.";
-    action = "필요 시 요청";
-  }
-  return { key: doc.key, group: doc.group, name: doc.name, status, detail, action };
+function buildDocumentRows() {
+  return DOC_ORDER.map(key => {
+    const def = DOC_TYPES[key];
+    const docs = analysesByType(key);
+    const candidates = candidateAnalyses(key);
+    const ocrCandidatePages = candidates.reduce((n, a) => n + (a.pageDiagnostics || []).filter(p => (p.documentTypeCandidates || []).includes(key) && p.ocrStatus === 'needed').length, 0);
+    const ocrNeed = docs.some(a => a.needsOcr || a.ocrStatus === ST_OCR) || ocrCandidatePages > 0;
+    if (!docs.length && candidates.length) return { key, group: def.group, name: def.label, status: ST_OCR, detail: `${def.label} 후보 위치: ${candidateLocationText(key) || `PDF ${ocrCandidatePages}쪽`}. 해당 쪽에서 직접 확인해주세요.`, action: 'PDF 해당 쪽 직접 확인' };
+    if (!docs.length) return { key, group: def.group, name: def.label, status: ST_MISS, detail: '관련 서류를 찾지 못했습니다.', action: '제출 여부 확인' };
+    if (ocrNeed && docs.every(a => !analysisText(a).trim())) return { key, group: def.group, name: def.label, status: ST_OCR, detail: `${docsLocationText(docs, key) || `${docs.length}개 파일`}에서 후보 위치를 확인하세요.`, action: 'PDF 해당 쪽 직접 확인' };
+    return { key, group: def.group, name: def.label, status: docs.some(a => a.needsOcr) ? ST_DIRECT : ST_SUBMIT, detail: `${docs.map(a => a.name).join(', ')}에서 서류 후보를 확인했습니다.${ocrCandidatePages ? ` · 이미지 후보 ${ocrCandidatePages}쪽 PDF 위치 후보` : ''}`, action: docs.some(a => a.needsOcr) || ocrCandidatePages ? '담당자가 직접 확인해주세요' : '상세값 확인' };
+  });
 }
 
-function checkVehicleInDoc(vehicleNo, docKey) {
-  const docDetected = state.docsByKey?.[docKey];
-  if (!docDetected?.found) return { status: "찾지 못함", detail: "서류를 찾지 못함" };
-  if (!vehicleNo) return { status: "직접확인", detail: "차량번호 없음" };
-  const compactText = state.allText.replace(/\s+/g, "");
-  const compactNo = vehicleNo.replace(/\s+/g, "");
-  return compactText.includes(compactNo)
-    ? { status: "확인", detail: "차량번호 확인" }
-    : { status: "보완필요", detail: "해당 차량번호 미확인" };
-}
-
-function checkDriverMatch(driver, text, safetyStatus) {
-  if (safetyStatus === "찾지 못함") return { status: "찾지 못함", detail: "통보서를 찾지 못함" };
-  if (!driver) return { status: "직접확인", detail: "배정 운전자명 없음" };
-  const cleaned = driver.replace(/[\s○*]/g, "");
-  if (!cleaned || cleaned.length < 2) return { status: "직접확인", detail: "운전자명 OCR 확인 필요" };
-  const safeDriver = cleaned.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const found = new RegExp(safeDriver.split("").join("\\s*"), "i").test(text.replace(/[○*]/g, ""));
-  return found ? { status: "확인", detail: "운전자명 확인" } : { status: "직접확인", detail: "운전자 일치 직접확인" };
-}
-
-function checkInspectionValidity(vehicleNo, text, startDate) {
-  if (!state.docsByKey?.registration?.found) return { status: "찾지 못함", detail: "등록원부/등록증을 찾지 못함" };
-  const dates = extractDates(text);
-  if (dates.length === 0) return { status: "직접확인", detail: "검사유효기간 확인불가" };
-  const target = new Date(startDate);
-  const future = dates.filter((d) => d >= target).sort((a, b) => b - a);
-  if (future.length > 0) return { status: "확인", detail: formatDate(future[0]) + "까지 유효 추정" };
-  return { status: "보완필요", detail: "출발일 이후 유효기간 미확인" };
-}
-
-function checkPeriodValidity(text, startDate) {
-  const dates = extractDates(text);
-  if (dates.length < 1) return { status: "직접확인", detail: "기간 날짜 확인불가" };
-  const target = new Date(startDate);
-  return dates.some((d) => d >= target)
-    ? { status: "확인", detail: "출발일 포함 가능" }
-    : { status: "보완필요", detail: "출발일 이후 보험기간 미확인" };
-}
-
-function getEstimatedPriceValue() {
-  const raw = $("#estimatedPrice")?.value || "";
-  const numeric = Number(String(raw).replace(/[^0-9]/g, ""));
-  return Number.isFinite(numeric) ? numeric : 0;
-}
-
-function getContractConditionInfo() {
-  const price = getEstimatedPriceValue();
-  const contractType = $("#contractType")?.value || "";
-  const priceEntered = price > 0;
-  const overTenMillion = price >= 10000000;
-  const isPrivate = contractType === "수의계약";
-  const isBidLike = ["입찰", "2인이상 전자견적"].includes(contractType);
-
-  if (!priceEntered) return { priceEntered, overTenMillion, isPrivate, isBidLike, needsDirectProduction: false, summaryValue: "선택", summaryLabel: "추정가격 미입력 · 조건별 서류 판단 보류", hintClass: "neutral", hintText: "추정가격을 입력하면 직접생산확인증명서 확인 필요 여부를 안내합니다." };
-  if (isPrivate && overTenMillion) return { priceEntered, overTenMillion, isPrivate, isBidLike, needsDirectProduction: true, summaryValue: "확인 필요", summaryLabel: "1천만원 이상 수의계약 · 직접생산확인증명서", hintClass: "need", hintText: "확인 필요: 추정가격 1천만원 이상 수의계약으로 입력되었습니다. '기타도로여객운송서비스' 직접생산확인증명서 확인이 필요할 수 있습니다." };
-  if (overTenMillion && !contractType) return { priceEntered, overTenMillion, isPrivate, isBidLike, needsDirectProduction: true, summaryValue: "방식 확인", summaryLabel: "1천만원 이상 · 계약방식 확인 후 직접생산 판단", hintClass: "check", hintText: "계약방식 확인 필요: 추정가격이 1천만원 이상입니다. 수의계약이면 직접생산확인증명서 확인이 필요할 수 있습니다." };
-  if (isBidLike) return { priceEntered, overTenMillion, isPrivate, isBidLike, needsDirectProduction: true, summaryValue: "자격 확인", summaryLabel: "입찰·전자견적 · 중소기업/직접생산 확인 안내", hintClass: "check", hintText: "참고 안내: 입찰 또는 2인이상 전자견적은 중소기업확인서와 직접생산확인증명서 등 참가자격 서류를 별도로 확인하세요." };
-  return { priceEntered, overTenMillion, isPrivate, isBidLike, needsDirectProduction: false, summaryValue: "참고", summaryLabel: "추정가격 입력됨 · 학교 계약조건 별도 확인", hintClass: overTenMillion ? "check" : "ok", hintText: overTenMillion ? "참고 안내: 추정가격은 1천만원 이상이지만 수의계약으로 선택되지 않았습니다. 계약방식과 학교 기준에 따라 추가서류를 확인하세요." : "참고 안내: 추정가격 1천만원 미만으로 입력되었습니다. 직접생산확인증명서 대상 여부는 학교 계약조건에 따라 별도 확인하세요." };
-}
-
-function updatePriceHint() {
-  const hint = $("#priceHint");
-  if (!hint) return;
-  const info = getContractConditionInfo();
-  hint.textContent = info.hintText;
-  hint.className = `price-hint ${info.hintClass}`;
-}
-
-function evaluateContractConditionRows() {
-  const info = getContractConditionInfo();
+function buildCompanyRows(startDate, endDate) {
   const rows = [];
-  const allText = state.allText || "";
-  const hasSme = /중소기업확인서|소기업|소상공인|중소기업/.test(allText);
-  const hasDirect = /직접생산확인증명서|직접생산|기타도로여객운송서비스|7811189904/.test(allText);
-
-  if (!info.priceEntered && !info.isBidLike && !info.isPrivate) return rows;
-
-  rows.push({ key: "smeCertificate", group: "계약조건별", name: "중소기업·소상공인 확인서", status: hasSme ? "확인" : (info.isBidLike ? "확인필요" : "직접확인"), detail: hasSme ? "중소기업/소기업/소상공인 관련 문구 확인" : "계약방식 또는 금액에 따라 확인이 필요할 수 있습니다.", action: hasSme ? "완료" : "계약조건에 따라 제출 여부 확인" });
-
-  if (info.needsDirectProduction) {
-    rows.push({ key: "directProduction", group: "계약조건별", name: "직접생산확인증명서", status: hasDirect ? "확인" : "확인필요", detail: hasDirect ? "직접생산확인증명서 또는 기타도로여객운송서비스 문구 확인" : info.summaryLabel, action: hasDirect ? "완료" : "세부품명 '기타도로여객운송서비스' 제출 여부 확인" });
+  const pledgeDocs = analysesByType('pledge');
+  if (pledgeDocs.length) {
+    const text = pledgeDocs.map(analysisText).join('\n');
+    const blankDate = /(\d{4})\s*[.년]\s*[.]?\s*[.]?\s*[월]?\s*[.]?\s*[일]?|년\s*월\s*일/.test(text) && /\d{4}\s*[.]\s*[.]\s*[.]|년\s*월\s*일/.test(text);
+    const hasPledge = /직영\s*차량|직영차량|운행\s*각서|운행각서|직영\s*차량으로만\s*운행/.test(text);
+    rows.push({
+      key: 'pledge', item: '직영차량 운행각서', status: hasPledge ? ST_SUBMIT : ST_DIRECT,
+      detail: `${pledgeDocs.map(a => a.name).join(', ')} · 직영차량 운행 확약 문구 ${hasPledge ? '확인' : '담당자가 직접 확인해주세요'}${blankDate ? ' · 날짜 미기재 후보' : ''}`,
+      action: blankDate ? '날짜/대표자/직인 담당자가 직접 확인해주세요' : '대표자/직인 담당자가 직접 확인해주세요'
+    });
+  } else {
+    rows.push({ key: 'pledge', item: '직영차량 운행각서', status: ST_MISS, detail: '업체 확약서 후보를 찾지 못했습니다.', action: '제출 여부 확인' });
   }
+
+  const priceVal = parsePrice($('#estimatedPrice')?.value || '0');
+  const directDocs = analysesByType('directProd');
+  if (priceVal >= 10000000) {
+    if (directDocs.length) rows.push({ key: 'directProd', item: '직접생산확인증명서', status: ST_SUBMIT, detail: `${directDocs.map(a => a.name).join(', ')}에서 서류 후보 확인 · 유효기간/세부품명 담당자가 직접 확인해주세요`, action: '업체명·유효기간 확인' });
+    else rows.push({ key: 'directProd', item: '직접생산확인증명서', status: ST_NEED, detail: '추정가격 1천만원 이상으로 확인 필요합니다.', action: '해당 서류 요청' });
+  } else if (priceVal > 0) {
+    rows.push({ key: 'directProd', item: '직접생산확인증명서', status: ST_NA, detail: '추정가격 1천만원 미만으로 일반 확인 진행입니다.', action: '필요 시 계약방식 확인' });
+  } else {
+    rows.push({ key: 'directProd', item: '직접생산확인증명서', status: ST_DIRECT, detail: '추정가격 미입력 상태입니다. 필요 여부를 판단하려면 금액을 입력하세요.', action: '추정가격 확인' });
+  }
+
+  const bizDocs = analysesByType('businessRegistration');
+  if (bizDocs.length) {
+    const t = bizDocs.map(analysisText).join('\n');
+    const hasBizNo = /\d{3}\s*-\s*\d{2}\s*-\s*\d{5}/.test(t) || /사업자등록번호/.test(t);
+    const hasBus = /전세버스|운수|여객|관광/.test(t);
+    rows.push({ key: 'businessRegistration', item: '사업자등록증', status: hasBizNo ? ST_SUBMIT : ST_DIRECT, detail: `${bizDocs.map(a => a.name).join(', ')} · 사업자등록번호 ${hasBizNo ? '확인' : '담당자가 직접 확인해주세요'}${hasBus ? ' · 전세버스/운수 관련 문구 확인' : ''}`, action: '업체명·대표자·업태/종목 확인' });
+  } else {
+    rows.push({ key: 'businessRegistration', item: '사업자등록증', status: ST_MISS, detail: '사업자등록증 후보를 찾지 못했습니다.', action: '제출 여부 확인' });
+  }
+
+  const preDocs = analysesByType('preCheck');
+  if (preDocs.length) {
+    const found = new Set();
+    preDocs.forEach(a => extractVehicleNumbers(analysisText(a)).forEach(v => found.add(normalizeVehicleNo(v))));
+    const total = state.assignedVehicles.length;
+    const matched = state.assignedVehicles.filter(v => found.has(normalizeVehicleNo(v.vehicleNo))).length;
+    rows.push({ key: 'preCheck', item: '출발전 점검표', status: matched >= total && total ? ST_SUBMIT : ST_DIRECT, detail: `${total || 0}대 중 ${matched}대 차량번호 확인${preDocs.length ? ` · ${preDocs.map(a => a.name).join(', ')}` : ''}`, action: '적합/실시 및 직인 담당자가 직접 확인해주세요' });
+  } else {
+    rows.push({ key: 'preCheck', item: '출발전 점검표', status: ST_MISS, detail: '출발전 교육 및 차량안전점검표 후보를 찾지 못했습니다.', action: '제출 여부 확인' });
+  }
+
+  rows.push({ key: 'period', item: '이용기간', status: endDate ? ST_SUBMIT : ST_DIRECT, detail: endDate ? `${startDate} ~ ${endDate} 기준으로 기간을 확인합니다.` : `${startDate || '출발일'} 기준으로 확인합니다. 1박 2일 이상이면 도착일 입력을 권장합니다.`, action: endDate ? '기간 기준 확인' : '필요 시 도착일 입력' });
   return rows;
 }
 
-function renderSummary(startDate, endDate) {
-  const vehicleTotal = state.assignedVehicles.length;
-  const baseDocTotal = REQUIRED_DOCS.length;
-  const baseDocConfirmed = state.docRows.filter((r) => REQUIRED_DOCS.some((d) => d.key === r.key) && r.status === "확인").length;
-  const needs = state.docRows.filter((r) => ["보완필요", "찾지 못함"].includes(r.status)).length + state.vehicleRows.filter((r) => r.finalStatus === "보완필요").length;
-  const direct = state.docRows.filter((r) => ["직접확인", "기준자료없음", "확인필요"].includes(r.status)).length + state.vehicleRows.filter((r) => r.finalStatus === "직접확인").length;
-  const okVehicles = state.vehicleRows.filter((r) => r.finalStatus === "확인").length;
-  const contractInfo = getContractConditionInfo();
-  const final = vehicleTotal === 0 ? "기준자료 확인 필요" : needs > 0 ? "보완 필요" : direct > 0 ? "직접 확인 필요" : "검토 완료";
-
-  const badge = $("#finalStatusBadge");
-  badge.textContent = final;
-  badge.className = "status-badge " + (final === "검토 완료" ? "ok" : final === "보완 필요" ? "warn" : "purple");
-
-  const cards = [
-    { value: `${vehicleTotal}대`, label: "배정차량 확인" },
-    { value: `${baseDocConfirmed}/${baseDocTotal}`, label: "필수서류 확인" },
-    { value: `${okVehicles}/${vehicleTotal || 0}`, label: "차량별 대조 통과" },
-    { value: needs ? `${needs}건` : "0건", label: "보완 필요" },
-    { value: direct ? `${direct}건` : "0건", label: "직접 확인" },
-    { value: `${startDate}${endDate !== startDate ? ` ~ ${endDate}` : ""}`, label: "검토 기준일" },
-    { value: contractInfo.summaryValue, label: contractInfo.summaryLabel, type: contractInfo.needsDirectProduction ? "attention" : contractInfo.priceEntered ? "direct" : "" },
-  ];
-  $("#summaryCards").innerHTML = cards
-    .map((c) => `<div class="summary-card ${c.type || ""}"><strong>${escapeHtml(c.value)}</strong><span>${escapeHtml(c.label)}</span></div>`)
-    .join("");
+function buildVehicleRow(vehicle, startDate, endDate) {
+  const vno = normalizeVehicleNo(vehicle.vehicleNo);
+  const insurance = evalInsurance(vno, startDate, endDate);
+  const regCert = evalRegistration(vno, startDate, endDate, 'registrationCert');
+  const regLedger = evalRegistration(vno, startDate, endDate, 'registrationLedger');
+  const safety = evalSafety(vno, startDate, endDate);
+  const preCheck = evalPreCheck(vno);
+  const finalStatus = summarizeFinal([insurance, regCert, regLedger, safety, preCheck]);
+  return { ...vehicle, vno, insurance, regCert, regLedger, safety, preCheck, finalStatus };
 }
 
-function renderDocumentStatus() {
-  $("#docStatusTbody").innerHTML = state.docRows
-    .map((r) => `<tr><td>${escapeHtml(r.group)}</td><td><strong>${escapeHtml(r.name)}</strong></td><td>${statusBadge(r.status)}</td><td>${escapeHtml(r.detail)}</td><td>${escapeHtml(r.action)}</td></tr>`)
-    .join("");
+function summarizeFinal(items) {
+  if (items.some(x => [ST_NEED, ST_MISS].includes(x.status))) return ST_NEED;
+  if (items.some(x => [ST_DIRECT, ST_OCR].includes(x.status))) return ST_DIRECT;
+  if (items.some(x => x.status === ST_SUBMIT)) return ST_DIRECT;
+  return ST_OK;
 }
 
-function renderVehicleMatches() {
-  const tbody = $("#vehicleMatchTbody");
-  if (state.vehicleRows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:#607086;padding:20px;">배정차량 리스트가 없어요. 위 배정차량 영역에서 차량을 추가한 뒤 콕검을 다시 시작해 주세요.</td></tr>`;
-    return;
+function findDocsContainingVehicle(type, vno) {
+  const nv = normalizeVehicleNo(vno);
+  return analysesByType(type).filter(a => compact(analysisText(a)).includes(nv));
+}
+
+function evalInsurance(vno, startDate, endDate) {
+  const docs = analysesByType('insurance');
+  if (!vno) return result(ST_NEED, '차량번호가 없습니다.');
+  if (!docs.length) return result(ST_MISS, '보험서류를 찾지 못했습니다.');
+  const matches = findDocsContainingVehicle('insurance', vno);
+  if (!matches.length) {
+    if (docs.some(a => a.needsOcr)) return result(ST_OCR, `보험서류 후보 위치: ${docsLocationText(docs, 'insurance') || docs.map(a=>a.name).join(', ')}. 계약기간과 담보내용을 확인해주세요.`, docs);
+    return result(ST_MISS, '보험서류에서 이 차량번호를 찾지 못했습니다.', docs);
   }
-  tbody.innerHTML = state.vehicleRows
-    .map((r) => `<tr>
-      <td>${escapeHtml(r.hocha)}</td>
-      <td><strong>${escapeHtml(r.vehicleNo || "미입력")}</strong></td>
-      <td>${escapeHtml(r.driver || "—")}</td>
-      <td>${statusBadge(r.insurance.status)}</td>
-      <td>${statusBadge(r.registration.status)}</td>
-      <td>${statusBadge(r.safetyReport.status)}</td>
-      <td>${statusBadge(r.driverMatch.status)}</td>
-      <td>${statusBadge(r.inspection.status)}</td>
-      <td>${statusBadge(r.finalStatus)}</td>
-    </tr>`)
-    .join("");
+  const text = matches.map(analysisText).join('\n');
+  const period = findBestDateRange(text);
+  const covered = hasCoverageText(text);
+  if (period && periodCovers(period, startDate, endDate) && covered) return result(ST_OK, `계약기간 ${period.raw} · 담보내용 확인`, matches, { period: period.raw, coverage: '대인Ⅰ/Ⅱ·대물·자손/자차 후보 확인' });
+  const reason = [period ? `기간 후보 ${period.raw}` : '계약기간/유효기간 확인 필요', covered ? '담보내용 후보 확인' : '담보내용 담당자가 직접 확인해주세요'].join(' · ');
+  return result(ST_DIRECT, reason, matches, { period: period?.raw || '', coverage: covered ? '확인 후보' : '담당자가 직접 확인해주세요' });
 }
 
-function updateVehicleTable(mode = "대기") {
-  const empty = $("#vehicleEmpty");
-  const wrap = $("#vehicleTableWrap");
-  const chip = $("#vehicleCountChip");
-  const sourceNote = $("#vehicleSourceNote");
-
-  if (state.assignedVehicles.length === 0) {
-    empty.classList.remove("hidden");
-    wrap.classList.add("hidden");
-    if (chip) { chip.textContent = "차량 없음"; chip.className = "help-chip gray"; }
-    if (sourceNote) sourceNote.classList.add("hidden");
-    return;
+function evalRegistration(vno, startDate, endDate, type) {
+  const docs = analysesByType(type);
+  const candidates = candidateAnalyses(type);
+  if (!vno) return result(ST_NEED, '차량번호가 없습니다.');
+  if (!docs.length && candidates.length) return result(ST_OCR, `${DOC_TYPES[type].label} 후보 위치: ${candidateLocationText(type) || 'PDF 쪽수 확인 필요'}. 해당 쪽에서 담당자가 직접 확인해주세요.`, candidates);
+  if (!docs.length) return result(ST_MISS, `${DOC_TYPES[type].label}를 찾지 못했습니다.`);
+  const matches = findDocsContainingVehicle(type, vno);
+  if (!matches.length) {
+    if (docs.some(a => a.needsOcr)) return result(ST_OCR, `${DOC_TYPES[type].label} 후보 위치: ${docsLocationText(docs, type) || docs.map(a=>a.name).join(', ')}. 해당 쪽에서 담당자가 직접 확인해주세요.`, docs);
+    return result(ST_MISS, `${DOC_TYPES[type].label}에서 이 차량번호를 찾지 못했습니다.`, docs);
   }
+  const text = matches.map(analysisText).join('\n');
+  const hasBad = /말소|폐쇄/.test(text);
+  const stamp = /번호판\s*회수\s*확인\s*통보|등록번호판\s*회수|회수\s*확인/.test(text);
+  const period = findInspectionPeriod(text) || findBestDateRange(text);
+  if (hasBad) return result(ST_DIRECT, '말소/폐쇄 관련 문구 후보가 있어 담당자가 직접 확인해주세요', matches);
+  if (period && periodCovers(period, startDate, endDate)) return result(ST_OK, `검사유효기간 ${period.raw} 확인${stamp ? ' · 번호판 회수 스탬프는 제외 처리' : ''}`, matches, { inspection: period.raw, stamp });
+  return result(ST_DIRECT, `${period ? `검사유효기간 후보 ${period.raw}` : '검사유효기간 확인 필요'}${stamp ? ' · 번호판 회수 스탬프 제외 필요' : ''}`, matches, { inspection: period?.raw || '', stamp });
+}
 
-  empty.classList.add("hidden");
-  wrap.classList.remove("hidden");
-  if (chip) {
-    chip.textContent = `${state.assignedVehicles.length}대`;
-    chip.className = "help-chip blue";
+function evalSafety(vno, startDate, endDate) {
+  const docs = analysesByType('safetyReport');
+  if (!vno) return result(ST_NEED, '차량번호가 없습니다.');
+  if (!docs.length) return result(ST_MISS, '교통안전정보 통보서를 찾지 못했습니다.');
+  const matches = findDocsContainingVehicle('safetyReport', vno);
+  if (!matches.length) {
+    if (docs.some(a => a.needsOcr)) return result(ST_OCR, `교통안전정보 후보 위치: ${docsLocationText(docs, 'safetyReport') || docs.map(a=>a.name).join(', ')}. 검사만료일과 종합결과를 확인해주세요.`, docs);
+    return result(ST_MISS, '교통안전정보 통보서에서 이 차량번호를 찾지 못했습니다.', docs);
   }
-
-  // 출처 안내
-  if (sourceNote) {
-    const src = state.vehicleSource;
-    if (src === "자동추출") {
-      sourceNote.textContent = "배정 현황에서 차량번호를 자동으로 찾았어요. 내용이 맞는지 확인해 주세요.";
-      sourceNote.className = "vehicle-source-note ok";
-      sourceNote.classList.remove("hidden");
-    } else if (src === "후보" || src === "후보 차량") {
-      sourceNote.textContent = "배정 키워드는 없지만 본문에서 차량번호 후보를 발견했어요. 내용을 직접 확인해 주세요.";
-      sourceNote.className = "vehicle-source-note warn";
-      sourceNote.classList.remove("hidden");
-    } else if (src === "직접입력") {
-      sourceNote.textContent = "직접 입력으로 보정한 배정차량입니다.";
-      sourceNote.className = "vehicle-source-note info";
-      sourceNote.classList.remove("hidden");
-    } else {
-      sourceNote.classList.add("hidden");
-    }
-  }
-
-  const tbody = $("#vehicleTbody");
-  tbody.innerHTML = "";
-  state.assignedVehicles.forEach((vehicle, index) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td><input type="text" value="${escapeAttr(vehicle.hocha)}" data-field="hocha" data-index="${index}" /></td>
-      <td><input type="text" value="${escapeAttr(vehicle.vehicleNo)}" data-field="vehicleNo" data-index="${index}" placeholder="예: 서울72바5789" /></td>
-      <td><input type="text" value="${escapeAttr(vehicle.driver)}" data-field="driver" data-index="${index}" /></td>
-      <td><input type="text" value="${escapeAttr(vehicle.phone)}" data-field="phone" data-index="${index}" /></td>
-      <td><span class="status-badge gray">${escapeHtml(vehicle.note || "")}</span></td>
-      <td><button class="row-delete" type="button" data-index="${index}" aria-label="삭제">삭제</button></td>`;
-    tbody.appendChild(tr);
-  });
-
-  tbody.querySelectorAll("input").forEach((input) => {
-    input.addEventListener("change", (e) => {
-      const { field, index: idx } = e.target.dataset;
-      state.assignedVehicles[idx][field] = e.target.value;
-      if (state.vehicleSource !== "직접입력") state.vehicleSource = "직접입력";
-    });
-  });
-  tbody.querySelectorAll(".row-delete").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      state.assignedVehicles.splice(Number(e.target.dataset.index), 1);
-      updateVehicleTable();
-    });
-  });
+  const block = matches.map(a => getVehicleBlock(analysisText(a), vno)).join('\n') || matches.map(analysisText).join('\n');
+  const fullText = matches.map(analysisText).join('\n');
+  // 병합셀/2줄 구조 대응: 차량번호가 있는 행 주변 블록에서 검사만료일을 우선 찾고, 없으면 전체 텍스트에서 역추적한다.
+  const date = findInspectionExpiry(block) || findInspectionExpiry(fullText) || findLatestDate(block);
+  const good = /이상\s*없음|이상없음/.test(block) || /이상\s*없음|이상없음/.test(fullText);
+  const driverQual = /버스운전자격[^\n]*(유|있음|적합)/.test(block) ? '버스운전자격 후보 확인' : '운전자 항목 담당자가 직접 확인해주세요';
+  if (date && dateEndCovers(date, startDate, endDate) && good) return result(ST_OK, `자동차검사 만료일 ${date.raw} · 종합결과 이상없음`, matches, { expiry: date.raw, result: '이상없음', driver: driverQual });
+  return result(ST_DIRECT, `${date ? `자동차검사 만료일 후보 ${date.raw}` : '자동차검사 만료일 확인 필요'} · ${good ? '종합결과 이상없음 후보' : '종합결과 담당자가 직접 확인해주세요'} · ${driverQual}`, matches, { expiry: date?.raw || '', result: good ? '이상없음 후보' : '담당자가 직접 확인해주세요', driver: driverQual });
 }
 
-function renderChecklist() {
-  const wrap = $("#checklistWrap");
-  if (!wrap) return;
-  wrap.innerHTML = CHECKLIST_ITEMS.map((item) =>
-    `<label class="check-item"><input type="checkbox" /><span>${escapeHtml(item)}</span></label>`
-  ).join("");
+
+function evalPreCheck(vno) {
+  const docs = analysesByType('preCheck');
+  const candidates = candidateAnalyses('preCheck');
+  if (!vno) return result(ST_NEED, '차량번호가 없습니다.');
+  if (!docs.length && candidates.length) return result(ST_OCR, `출발전 점검표 후보 위치: ${candidateLocationText('preCheck') || 'PDF 쪽수 확인 필요'}. 적합/실시 표시를 확인해주세요.`, candidates);
+  if (!docs.length) return result(ST_MISS, '출발전 점검표를 찾지 못했습니다.');
+  const matches = findDocsContainingVehicle('preCheck', vno);
+  if (!matches.length) return result(ST_MISS, '출발전 점검표에서 이 차량번호를 찾지 못했습니다.', docs);
+  const text = matches.map(analysisText).join('\n');
+  const ok = /적합/.test(text) || /실시/.test(text);
+  return result(ok ? ST_SUBMIT : ST_DIRECT, ok ? '적합/실시로 보이는 표시 있음 · 서명/직인 직접 확인' : '점검결과 담당자가 직접 확인해주세요', matches, { result: ok ? '적합/실시 표시 후보' : '담당자가 직접 확인해주세요' });
 }
 
-function generateSupplementRequestText() {
-  const company = $("#companyName").value.trim();
-  const event = $("#eventName").value.trim();
-  const startDate = $("#startDate").value;
-  const prefix = company ? `${company}에서 ` : "";
-  const eventStr = event ? ` (${event})` : "";
-
-  const needsRows = state.docRows.filter((r) => ["보완필요", "찾지 못함", "확인필요"].includes(r.status));
-  const needsVehicle = state.vehicleRows.filter((r) => r.finalStatus === "보완필요");
-  const directRows = state.docRows.filter((r) => ["직접확인", "기준자료없음"].includes(r.status));
-
-  if (needsRows.length === 0 && needsVehicle.length === 0) {
-    return `안녕하세요.\n\n${prefix}제출하신 전세버스 임차 관련 서류${eventStr}를 검토하였습니다.\n현재까지 확인된 서류는 이상 없습니다.\n\n출발일(${startDate}) 전까지 추가 요청 사항이 있을 경우 별도 안내 드리겠습니다.\n\n감사합니다.`;
-  }
-
-  let text = `안녕하세요.\n\n${prefix}제출하신 전세버스 임차 관련 서류${eventStr}를 검토한 결과,\n배정차량 리스트 기준으로 아래 사항의 보완이 필요합니다.\n\n`;
-
-  if (needsRows.length > 0) {
-    text += "【서류 보완 필요】\n";
-    needsRows.forEach((r) => { text += `- ${r.name}: ${r.detail}\n`; });
-    text += "\n";
-  }
-
-  if (needsVehicle.length > 0) {
-    text += "【차량별 보완 필요】\n";
-    needsVehicle.forEach((r) => {
-      const issues = [r.insurance, r.registration, r.safetyReport, r.driverMatch, r.inspection]
-        .filter((x) => ["보완필요", "찾지 못함"].includes(x.status))
-        .map((x) => x.detail);
-      text += `- ${r.vehicleNo || r.hocha}: ${issues.join(", ")}\n`;
-    });
-    text += "\n";
-  }
-
-  if (directRows.length > 0) {
-    text += "【직접 확인 필요】\n";
-    directRows.forEach((r) => { text += `- ${r.name}: ${r.detail}\n`; });
-    text += "\n";
-  }
-
-  text += `출발일(${startDate}) 전까지 보완 서류를 제출해 주시기 바랍니다.\n\n감사합니다.`;
-  return text;
+function result(status, detail, docs = [], extra = {}) {
+  return { status, detail, docs, sources: docs.map(a => a.name), ...extra };
 }
 
-// ─── CSV 내보내기 ─────────────────────────────────────────────
-function exportToCSV() {
-  if (!state.docRows || state.docRows.length === 0) {
-    showToast("먼저 콕검을 시작해 주세요.");
-    return;
-  }
-
-  const BOM = "\uFEFF";
-  const escape = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const row = (...cells) => cells.map(escape).join(",") + "\n";
-
-  let csv = BOM;
-  csv += row("버스콕검 검토 결과", "v0.1.3");
-  csv += row("검토일", new Date().toLocaleDateString("ko-KR"));
-  csv += row("출발일", $("#startDate").value || "");
-  csv += row("업체명", $("#companyName").value || "");
-  csv += row("행사명", $("#eventName").value || "");
-  csv += "\n";
-
-  csv += row("[서류별 제출현황]");
-  csv += row("구분", "서류명", "결과", "확인내용", "조치");
-  state.docRows.forEach((r) => { csv += row(r.group, r.name, r.status, r.detail, r.action); });
-  csv += "\n";
-
-  csv += row("[배정차량별 확인]");
-  csv += row("호차", "차량번호", "운전자", "보험증명서", "등록원부/등록증", "교통안전정보", "운전자일치", "검사유효기간", "결과");
-  state.vehicleRows.forEach((r) => {
-    csv += row(r.hocha, r.vehicleNo, r.driver, r.insurance.status, r.registration.status, r.safetyReport.status, r.driverMatch.status, r.inspection.status, r.finalStatus);
-  });
-  csv += "\n";
-
-  csv += row("[출발 전 확인사항]");
-  CHECKLIST_ITEMS.forEach((item) => { csv += row(item, ""); });
-
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `버스콕검_${$("#startDate").value || "결과"}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  showToast("CSV 파일로 내보냈어요. Excel에서 열 수 있습니다.");
+function getVehicleBlock(text, vno) {
+  const nv = normalizeVehicleNo(vno);
+  const lines = String(text || '').split(/\n+/);
+  const idx = lines.findIndex(line => compact(line).includes(nv));
+  if (idx >= 0) return lines.slice(Math.max(0, idx - 2), Math.min(lines.length, idx + 4)).join('\n');
+  const c = compact(text);
+  const pos = c.indexOf(nv);
+  if (pos < 0) return '';
+  return c.slice(Math.max(0, pos - 250), pos + 500);
 }
 
-// ─── 초기화 ──────────────────────────────────────────────────
-function resetAll() {
-  state.files = [];
-  state.docs = [];
-  state.allText = "";
-  state.assignedVehicles = [];
-  state.foundVehicles = [];
-  state.docRows = [];
-  state.vehicleRows = [];
-  state.requestText = "";
-  state.checked = false;
-  state.vehicleSource = "없음";
-
-  updateFileList();
-  updateVehicleTable();
-  $$(".result-panel").forEach((s) => s.classList.add("hidden"));
-  const notice = $("#preCheckNotice");
-  if (notice) notice.classList.remove("hidden");
-  $("#fileInput").value = "";
-  $("#requestText").value = "";
-  updatePriceHint();
-  updateStepProgress();
-  showToast("초기화했어요.");
+function hasCoverageText(text) {
+  const t = normalizeRoman(text);
+  const c = compact(t);
+  const hasPerson = /대인I/.test(t) || /대인1/.test(t) || c.includes('대인Ⅰ') || c.includes('대인II') || c.includes('대인2') || c.includes('대인Ⅱ');
+  const hasDamage = c.includes('대물');
+  const hasSelf = c.includes('자손') || c.includes('자차') || c.includes('자기신체');
+  return hasPerson && hasDamage && hasSelf;
 }
 
-// ─── 유틸리티 ────────────────────────────────────────────────
-function scrollToTarget(id) {
-  const target = id === "top" ? document.body : document.getElementById(id);
-  if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+function parseDate(y, m, d, raw) {
+  const yy = String(y).padStart(4, '0');
+  const mm = String(m).padStart(2, '0');
+  const dd = String(d).padStart(2, '0');
+  const date = new Date(`${yy}-${mm}-${dd}T00:00:00`);
+  if (isNaN(date)) return null;
+  return { date, raw: raw || `${yy}.${mm}.${dd}`, normalized: `${yy}-${mm}-${dd}` };
 }
 
-function toggleFloatTop() {
-  const btn = $("#floatTopBtn");
-  if (btn) btn.classList.toggle("show", window.scrollY > 320);
-}
-
-function statusBadge(status) {
-  const cls = status === "확인" ? "ok" : status === "보완필요" ? "warn" : status === "찾지 못함" ? "notfound" : status === "출발전제출" ? "blue" : ["직접확인", "확인필요"].includes(status) ? "purple" : "gray";
-  const label = status === "직접확인" ? "직접 확인" : status === "확인필요" ? "확인 필요" : status === "보완필요" ? "보완 필요" : status === "출발전제출" ? "출발 전 제출" : status === "기준자료없음" ? "기준자료 없음" : status;
-  return `<span class="status-badge ${cls}">${escapeHtml(label)}</span>`;
-}
-
-function tableRowsToText(rows, headers) {
-  return `${headers.join("\t")}\n${rows.map((r) => [r.group, r.name, r.status, r.detail, r.action].join("\t")).join("\n")}`;
-}
-
-function vehicleRowsToText() {
-  const header = ["호차", "차량번호", "운전자", "보험증명서", "등록원부/등록증", "교통안전정보", "운전자 일치", "검사유효기간", "결과"];
-  const body = state.vehicleRows.map((r) => [r.hocha, r.vehicleNo, r.driver, r.insurance.status, r.registration.status, r.safetyReport.status, r.driverMatch.status, r.inspection.status, r.finalStatus].join("\t")).join("\n");
-  return `${header.join("\t")}\n${body}`;
-}
-
-async function copyText(text, successMessage) {
-  if (!text) return showToast("복사할 내용이 없어요.");
-  try {
-    await navigator.clipboard.writeText(text);
-    showToast(successMessage);
-  } catch {
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand("copy");
-    ta.remove();
-    showToast(successMessage);
-  }
-}
-
-function showToast(message) {
-  const toast = $("#toast");
-  toast.textContent = message;
-  toast.classList.add("show");
-  clearTimeout(showToast.timer);
-  showToast.timer = setTimeout(() => toast.classList.remove("show"), 2400);
-}
-
-function extractDriverFromContext(context) {
-  const labeled = context.match(/(?:운전자|운전기사|기사)\s*[:：]?\s*([가-힣]{2,4})/);
-  if (labeled) return labeled[1];
-  const excluded = new Set(["서울", "경기", "부산", "대구", "인천", "광주", "대전", "울산", "세종", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주", "차량", "운전", "보험", "등록", "전세", "버스", "관광", "고속", "여객", "운송", "삼우", "세일"]);
-  const names = context.match(/[가-힣]{2,4}/g) || [];
-  return names.find((n) => !excluded.has(n) && n.length >= 2 && n.length <= 4) || "";
-}
-
-function extractPhoneFromContext(context) {
-  return (context.match(/01[016789][-\s]?\d{3,4}[-\s]?\d{4}/) || [""])[0];
-}
-
-function extractHochaFromContext(context) {
-  return (context.match(/\d+\s*호차/) || [""])[0].replace(/\s/g, "");
-}
-
-function extractDates(text) {
+function findDates(text) {
   const dates = [];
-  const patterns = [/(\d{4})[.\-/년](\d{1,2})[.\-/월](\d{1,2})일?/g, /(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일/g];
-  patterns.forEach((pat) => {
+  const patterns = [
+    /(20\d{2})\s*[.\-\/]\s*(\d{1,2})\s*[.\-\/]\s*(\d{1,2})/g,
+    /(20\d{2})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일/g
+  ];
+  patterns.forEach(re => {
     let m;
-    while ((m = pat.exec(text)) !== null) {
-      const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-      if (!isNaN(d.getTime())) dates.push(d);
+    while ((m = re.exec(text)) !== null) {
+      const d = parseDate(m[1], m[2], m[3], m[0]);
+      if (d) dates.push(d);
     }
   });
   return dates;
 }
 
-function normalizeText(text) {
-  return text.replace(/\u00a0/g, " ").replace(/[ \t]+/g, " ").trim();
+function findBestDateRange(text) {
+  const re = /(20\d{2})\s*[.\-\/]\s*(\d{1,2})\s*[.\-\/]\s*(\d{1,2})\s*(?:~|부터|[-–—])\s*(20\d{2})\s*[.\-\/]\s*(\d{1,2})\s*[.\-\/]\s*(\d{1,2})/g;
+  let m;
+  let best = null;
+  while ((m = re.exec(text)) !== null) {
+    const s = parseDate(m[1], m[2], m[3]);
+    const e = parseDate(m[4], m[5], m[6]);
+    if (s && e) best = { start: s.date, end: e.date, raw: m[0], normalizedStart: s.normalized, normalizedEnd: e.normalized };
+  }
+  if (best) return best;
+  const dates = findDates(text);
+  if (dates.length >= 2) {
+    dates.sort((a, b) => a.date - b.date);
+    const s = dates[0], e = dates[dates.length - 1];
+    return { start: s.date, end: e.date, raw: `${s.raw} ~ ${e.raw}`, normalizedStart: s.normalized, normalizedEnd: e.normalized };
+  }
+  return null;
 }
 
-function normalizeVehicleNo(value) {
-  return String(value || "").replace(/\s+/g, "").trim();
+function findInspectionPeriod(text) {
+  const idx = String(text || '').indexOf('검사유효기간');
+  if (idx >= 0) return findBestDateRange(text.slice(idx, idx + 300));
+  return null;
 }
 
-function getContextAround(text, keyword, radius = 60) {
-  const compactKw = normalizeVehicleNo(keyword);
-  const compact = text.replace(/[\s\u00a0]+/g, "");
-  const index = compact.indexOf(compactKw);
-  if (index === -1) return "";
-  return compact.slice(Math.max(0, index - radius), index + compactKw.length + radius);
+function findInspectionExpiry(text) {
+  const idx = String(text || '').search(/자동차검사\s*만료일|검사\s*만료일/);
+  if (idx >= 0) {
+    const dates = findDates(text.slice(idx, idx + 250));
+    if (dates.length) return dates[0];
+  }
+  return null;
 }
 
-function formatDate(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+function findLatestDate(text) {
+  const dates = findDates(text);
+  if (!dates.length) return null;
+  dates.sort((a, b) => b.date - a.date);
+  return dates[0];
 }
 
-function formatBytes(bytes) {
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+function periodCovers(period, startDate, endDate) {
+  if (!period || !startDate) return false;
+  const s = new Date(`${startDate}T00:00:00`);
+  const e = endDate ? new Date(`${endDate}T00:00:00`) : s;
+  return period.start <= s && period.end >= e;
 }
 
-function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function dateEndCovers(dateObj, startDate, endDate) {
+  if (!dateObj || !startDate) return false;
+  const s = new Date(`${startDate}T00:00:00`);
+  const e = endDate ? new Date(`${endDate}T00:00:00`) : s;
+  return dateObj.date >= s && dateObj.date >= e;
 }
 
-function escapeAttr(value) {
-  return escapeHtml(value).replace(/'/g, "&#39;");
+// ── 렌더링 ────────────────────────────────────────────────────
+
+function displayStatus(status) {
+  const map = {
+    [ST_OK]: '확인완료',
+    [ST_SUBMIT]: '제출 위치 확인됨',
+    [ST_DIRECT]: '담당자가 직접 확인해주세요',
+    [ST_NEED]: '보완필요',
+    [ST_MISS]: '못 찾음',
+    [ST_OCR]: 'PDF 위치 후보',
+    [ST_NA]: '해당없음',
+    '쪽수 정리': '쪽수 정리',
+    '자동 판독 어려움': '자동 판독 어려움',
+    'PDF 위치 후보': 'PDF 위치 후보',
+    '이미지 서류 포함': '이미지 서류 포함',
+    '스캔본으로 보임': 'PDF 위치 후보',
+    '텍스트 부족': 'PDF 위치 후보'
+  };
+  return map[status] || status || '대기';
 }
+function statusBadge(status) {
+  const map = {
+    [ST_OK]: 'ok', [ST_SUBMIT]: 'blue', [ST_DIRECT]: 'lavender', [ST_NEED]: 'orange', [ST_MISS]: 'bad', [ST_OCR]: 'grayblue', [ST_NA]: 'gray',
+    '확인': 'ok', '확인필요': 'warn', '출발전제출': 'purple', '기준자료없음': 'gray', '차량번호없음': 'bad'
+  };
+  return `<span class="status-badge ${map[status] || 'gray'}">${escapeHtml(displayStatus(status))}</span>`;
+}
+
+function shortStatus(status) {
+  if (status === ST_OK) return '확인완료';
+  if (status === ST_SUBMIT) return '위치확인';
+  if (status === ST_DIRECT) return '직접확인';
+  if (status === ST_OCR) return '위치 후보';
+  if (status === ST_NEED) return '보완';
+  if (status === ST_MISS) return '못 찾음';
+  return displayStatus(status);
+}
+
+function renderSummary(startDate, endDate) {
+  const el = $('#summaryContent');
+  if (!el) return;
+  const vTotal = state.vehicleRows.length;
+  const vehOk = state.vehicleRows.filter(r => r.finalStatus === ST_OK).length;
+  const vehNeed = state.vehicleRows.filter(r => r.finalStatus === ST_NEED || r.finalStatus === ST_MISS).length;
+  const vehDirect = state.vehicleRows.filter(r => r.finalStatus === ST_DIRECT || r.finalStatus === ST_OCR).length;
+  const textDone = state.docAnalyses.filter(a => a.textStatus === '텍스트 분석 완료').length;
+  const ocrNeedPages = state.docAnalyses.reduce((n, a) => n + ((a.pageDiagnostics || []).filter(p => p.ocrStatus === 'needed').length || (a.needsOcr ? 1 : 0)), 0);
+  const agency = $('#companyName')?.value || '';
+  const event = $('#eventName')?.value || '';
+  const periodText = `${startDate || '-'}${endDate ? ` ~ ${endDate}` : ''}`;
+  const action = ocrNeedPages ? `원본 확인 필요 ${ocrNeedPages}쪽` : vehNeed ? `보완필요 ${vehNeed}대` : vehDirect ? `담당자 확인 ${vehDirect}대` : '주요 서류 정리 완료';
+  el.innerHTML = `
+    <div class="summary-compact">
+      <div class="summary-compact-main">
+        <strong>${escapeHtml(action)}</strong>
+        <span>제출파일 ${state.docAnalyses.length}개 · 배정차량 ${vTotal}대 · 이용기간 ${escapeHtml(periodText)}${agency ? ' · ' + escapeHtml(agency) : ''}${event ? ' · ' + escapeHtml(event) : ''}</span>
+      </div>
+      <div class="summary-compact-chips" aria-label="검토 결과 요약">
+        <span class="summary-chip ok">확인완료 ${vehOk}</span>
+        <span class="summary-chip warn">담당자 확인 ${vehDirect}</span>
+        <span class="summary-chip bad">보완필요 ${vehNeed}</span>
+        <span class="summary-chip info">텍스트 분석 ${textDone}</span>
+      </div>
+    </div>`;
+}
+
+function isAttentionStatus(status) {
+  return [ST_NEED, ST_MISS, ST_DIRECT, ST_OCR].includes(status);
+}
+
+function renderPriorityItems() {
+  const el = $('#priorityItemsContent');
+  if (!el) return;
+  const items = [];
+  state.companyRows.forEach(r => { if (isAttentionStatus(r.status)) items.push({ title: r.item, status: r.status, detail: r.detail || r.action || '' }); });
+  const docIssueCounts = {
+    insurance: 0, registration: 0, safety: 0, precheck: 0
+  };
+  state.vehicleRows.forEach(r => {
+    if (isAttentionStatus(r.insurance.status)) docIssueCounts.insurance++;
+    if (isAttentionStatus(r.regCert.status) || isAttentionStatus(r.regLedger.status)) docIssueCounts.registration++;
+    if (isAttentionStatus(r.safety.status)) docIssueCounts.safety++;
+    if (isAttentionStatus(r.preCheck.status)) docIssueCounts.precheck++;
+  });
+  if (docIssueCounts.insurance) items.unshift({ title: `보험서류 ${docIssueCounts.insurance}건`, status: ST_DIRECT, detail: '차량별 보험기간 또는 담보내용 확인이 필요합니다.' });
+  if (docIssueCounts.registration) items.unshift({ title: `차량등록서류 ${docIssueCounts.registration}건`, status: ST_DIRECT, detail: '자동차등록증 또는 자동차등록원부 확인이 필요합니다.' });
+  if (docIssueCounts.safety) items.unshift({ title: `교통안전정보 ${docIssueCounts.safety}건`, status: ST_DIRECT, detail: '검사유효기간 또는 종합결과 확인이 필요합니다.' });
+  if (docIssueCounts.precheck) items.unshift({ title: `출발 전 점검표 ${docIssueCounts.precheck}건`, status: ST_DIRECT, detail: '차량별 점검표 제출 여부 확인이 필요합니다.' });
+  if (!items.length) {
+    el.innerHTML = `<div class="priority-empty">현재 먼저 확인할 보완필요 항목이 없습니다. 그래도 원본 서류는 담당자가 최종 확인하세요.</div>`;
+    return;
+  }
+  el.innerHTML = `<div class="priority-list">${items.slice(0, 8).map(x => `<div class="priority-item"><div>${statusBadge(x.status)}</div><div><strong>${escapeHtml(x.title)}</strong><p>${escapeHtml(x.detail)}</p></div></div>`).join('')}</div>`;
+}
+
+function docRowStatus(key) {
+  const r = state.docRows.find(x => x.key === key);
+  return r ? r.status : ST_MISS;
+}
+function companyRowStatus(key) {
+  const r = state.companyRows.find(x => x.key === key);
+  return r ? r.status : ST_MISS;
+}
+function combinedVehicleStatus(selector) {
+  if (!state.vehicleRows.length) return ST_DIRECT;
+  const statuses = state.vehicleRows.map(selector);
+  if (statuses.some(s => s === ST_NEED || s === ST_MISS)) return ST_NEED;
+  if (statuses.some(s => s === ST_OCR)) return ST_OCR;
+  if (statuses.some(s => s === ST_DIRECT)) return ST_DIRECT;
+  if (statuses.some(s => s === ST_SUBMIT)) return ST_SUBMIT;
+  return ST_OK;
+}
+function formatPageList(pages) {
+  const nums = [...new Set((pages || []).map(Number).filter(Boolean))].sort((a, b) => a - b);
+  if (!nums.length) return '';
+  const ranges = [];
+  let start = nums[0], prev = nums[0];
+  for (let i = 1; i <= nums.length; i++) {
+    const n = nums[i];
+    if (n === prev + 1) { prev = n; continue; }
+    ranges.push(start === prev ? String(start) : `${start}~${prev}`);
+    start = prev = n;
+  }
+  return ranges.join(', ');
+}
+
+function sourceLocationsByType() {
+  const grouped = {};
+  state.docAnalyses.forEach(a => {
+    (a.pageDiagnostics || []).forEach(p => {
+      const cand = p.documentTypeCandidates || [];
+      cand.forEach(type => {
+        if (!grouped[type]) grouped[type] = {};
+        if (!grouped[type][a.name]) grouped[type][a.name] = [];
+        grouped[type][a.name].push(p.pageNumber);
+      });
+    });
+    // 텍스트로 분류된 파일도 위치가 없으면 파일 단위 후보로 표시
+    if (a.type && a.type !== 'unknown' && !grouped[a.type]) {
+      grouped[a.type] = grouped[a.type] || {};
+      grouped[a.type][a.name] = (a.pageDiagnostics || []).map(p => p.pageNumber).slice(0, 3);
+    }
+  });
+  return grouped;
+}
+
+function renderSourceLocations() {
+  const el = $('#sourceLocationContent');
+  if (!el) return;
+  const grouped = sourceLocationsByType();
+  const order = ['registrationCert','registrationLedger','transport','businessRegistration','insurance','safetyReport','preCheck','pledge','directProd'];
+  const cards = [];
+  order.forEach(type => {
+    const files = grouped[type];
+    if (!files) return;
+    const locations = Object.entries(files).map(([name, pages]) => `${escapeHtml(name)} ${formatPageList(pages) ? `${formatPageList(pages)}쪽` : '파일 전체'}`).join('<br>');
+    const status = ['insurance','safetyReport'].includes(type) ? '확인됨 또는 후보' : '후보 · 담당자가 직접 확인해주세요';
+    cards.push(`<div class="source-card"><div class="source-card-head"><strong>${escapeHtml(docTypeLabel(type))}</strong>${statusBadge(['insurance','safetyReport'].includes(type) ? ST_SUBMIT : ST_DIRECT)}</div><div class="source-loc">${locations}</div><p class="source-help">해당 위치에서 ${sourceCheckGuide(type)} 확인해주세요.</p></div>`);
+  });
+  if (!cards.length) {
+    el.innerHTML = '<div class="empty-row">쪽수 후보가 아직 없습니다. 콕검을 실행하면 표시됩니다.</div>';
+    return;
+  }
+  el.innerHTML = cards.join('');
+}
+
+function sourceCheckGuide(type) {
+  return {
+    registrationCert: '차량번호와 검사유효기간을',
+    registrationLedger: '차량번호와 검사유효기간을',
+    transport: '업체명과 전세버스 운송사업 관련 문구를',
+    businessRegistration: '업체명·사업자등록번호·업태/종목을',
+    insurance: '차량번호·계약기간·담보내용을',
+    safetyReport: '차량번호·검사만료일·종합결과를',
+    preCheck: '차량번호와 적합/실시 표시를',
+    pledge: '직영차량 운행 확약 문구와 직인을',
+    directProd: '업체명·유효기간·세부품명을'
+  }[type] || '필요 항목을';
+}
+
+function attentionRank(status) {
+  return {
+    [ST_NEED]: 1,
+    [ST_DIRECT]: 2,
+    [ST_OCR]: 3,
+    [ST_MISS]: 4,
+    [ST_SUBMIT]: 5,
+    [ST_OK]: 6,
+    [ST_NA]: 7
+  }[status] || 9;
+}
+
+function bestLocationFor(key) {
+  const docs = analysesByType(key);
+  const fromDocs = docs.length ? docsLocationText(docs, key) : '';
+  const fromCandidates = candidateLocationText(key);
+  return fromDocs || fromCandidates || '';
+}
+
+function requiredItem({ group, name, status, location, check, action }) {
+  const safeLocation = status === ST_MISS ? '확인된 위치 없음' : (location || '확인된 위치 없음');
+  return { group, name, status, location: cleanLocationText(safeLocation), check, action };
+}
+
+function cleanLocationText(text) {
+  return String(text || '')
+    .replace(/\.pdf\s+PDF\s+/gi, '.pdf ')
+    .replace(/\bPDF\s+(\d)/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function requiredStatusText(status) {
+  return displayStatus(status);
+}
+
+function locationShort(location) {
+  const t = cleanLocationText(location || '');
+  if (!t || t === '제출파일에서 위치 후보 없음' || t === '확인된 위치 없음') return '';
+  return t.length > 42 ? t.slice(0, 41) + '…' : t;
+}
+
+function makeRequiredRequestPhrase(item) {
+  const name = item.name;
+  if (item.status === ST_OK || item.status === ST_SUBMIT || item.status === ST_NA) return '보완요청 문구 없음';
+  if (item.status === ST_MISS) return `${name}이 제출파일에서 확인되지 않습니다. ${item.check} 확인을 위해 해당 서류 제출을 요청드립니다.`;
+  if (item.status === ST_OCR) return `${name}은 제출파일 내 위치 후보가 있으나 원본 확인이 필요합니다. ${item.check} 항목이 보이도록 원본 또는 선명한 파일을 확인해주세요.`;
+  if (item.status === ST_DIRECT) return `${name}은 담당자 확인이 필요합니다. ${item.check} 항목을 확인할 수 있도록 원본 또는 제출파일을 확인해주세요.`;
+  return `${name} 관련 보완이 필요합니다. ${item.action || item.check} 내용을 확인해주세요.`;
+}
+
+function copyRequiredRequest(index) {
+  const txt = state.requiredRequests?.[index] || '';
+  if (!txt || txt === '보완요청 문구 없음') {
+    showToast('복사할 보완요청 문구가 없어요.', 'warn');
+    return;
+  }
+  navigator.clipboard?.writeText(txt).then(() => showToast('보완요청 문구를 복사했어요.', 'success')).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = txt;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+    showToast('보완요청 문구를 복사했어요.', 'success');
+  });
+}
+window.copyRequiredRequest = copyRequiredRequest;
+
+function renderRequiredChecklist() {
+  const el = $('#requiredDocsContent');
+  if (!el) return;
+  const priceVal = parsePrice($('#estimatedPrice')?.value || '0');
+
+  const regStatus = combinedVehicleStatus(r => regCombinedStatus(r));
+  const directProdStatus = priceVal >= 10000000 ? companyRowStatus('directProd') : (priceVal > 0 ? ST_NA : ST_DIRECT);
+  const rows = [
+    requiredItem({ group:'계약조건별 서류', name:'직접생산확인증명서', status:directProdStatus, location:bestLocationFor('directProd'), check:'추정가격 1천만원 이상 시 업체명·유효기간·세부품명', action:priceVal >= 10000000 ? '제출 여부 및 유효기간 확인' : (priceVal > 0 ? `추정가격 ${formatPrice(priceVal)}원 기준 현재 조건에서는 필수 아님` : '추정가격 입력 후 필요 여부 판단') }),
+    requiredItem({ group:'업체 확인 서류', name:'여객자동차 운송사업등록증', status:docRowStatus('transport'), location:bestLocationFor('transport'), check:'업체명·전세버스 운송사업 관련 문구', action:'운송업체 자격 확인' }),
+    requiredItem({ group:'업체 확인 서류', name:'사업자등록증', status:companyRowStatus('businessRegistration'), location:bestLocationFor('businessRegistration'), check:'업체명·사업자등록번호·업태/종목', action:'업체 정보 일치 확인' }),
+    requiredItem({ group:'업체 확인 서류', name:'직영차량 운행각서', status:companyRowStatus('pledge'), location:bestLocationFor('pledge'), check:'직영차량 운행 확약 문구·대표자·직인', action:'확약 문구와 직인 확인' }),
+    requiredItem({ group:'차량검토 기준자료', name:'차량보유 현황표', status:ST_DIRECT, location:'', check:'배정차량이 실제 보유차량인지 확인', action:'업체가 제출한 차량보유 현황표 원본 또는 제출파일을 확인' }),
+    requiredItem({ group:'차량검토 기준자료', name:'차량운행계획서', status:ST_DIRECT, location:'', check:'운행일정·차량 대수·운행구간 확인', action:'차량운행계획서 원본 또는 제출파일을 확인' }),
+    requiredItem({ group:'차량별 필수서류', name:'자동차 종합보험 가입증명서', status:combinedVehicleStatus(r => r.insurance.status), location:bestLocationFor('insurance'), check:'차량번호·계약기간·담보내용', action:'계약기간이 이용기간을 포함하는지 확인' }),
+    requiredItem({ group:'차량별 필수서류', name:'자동차등록증', status:combinedVehicleStatus(r => r.regCert.status), location:bestLocationFor('registrationCert'), check:'차량번호·검사유효기간', action:'후보 쪽에서 담당자 직접 확인' }),
+    requiredItem({ group:'차량별 필수서류', name:'자동차등록원부', status:combinedVehicleStatus(r => r.regLedger.status), location:bestLocationFor('registrationLedger'), check:'차량번호·검사유효기간', action:'후보 쪽에서 담당자 직접 확인' }),
+    requiredItem({ group:'차량별 필수서류', name:'전세버스 교통안전정보 조회결과 통보서', status:combinedVehicleStatus(r => r.safety.status), location:bestLocationFor('safetyReport'), check:'차량번호·검사만료일·종합결과', action:'검사만료일과 종합결과 확인' }),
+    requiredItem({ group:'차량별 필수서류', name:'출발 전 교육 및 차량안전점검표', status:combinedVehicleStatus(r => r.preCheck.status), location:bestLocationFor('preCheck'), check:'차량번호·적합/실시 표시·서명/직인', action:'차량별 제출 여부 및 직인 확인' }),
+  ];
+  state.requiredRequests = rows.map(makeRequiredRequestPhrase);
+  const counts = {
+    ok: rows.filter(r => r.status === ST_OK).length,
+    source: rows.filter(r => r.status === ST_OCR || r.status === ST_SUBMIT).length,
+    direct: rows.filter(r => r.status === ST_DIRECT).length,
+    miss: rows.filter(r => r.status === ST_MISS || r.status === ST_NEED).length
+  };
+  const attention = rows.filter(r => [ST_NEED, ST_DIRECT, ST_OCR, ST_MISS].includes(r.status));
+  const groups = ['계약조건별 서류', '업체 확인 서류', '차량검토 기준자료', '차량별 필수서류'];
+  const groupMeta = {
+    '계약조건별 서류': {
+      cls: 'contract',
+      label: '계약조건 확인',
+      desc: '추정가격과 계약 조건에 따라 추가로 필요한 증빙을 먼저 확인합니다.'
+    },
+    '업체 확인 서류': {
+      cls: 'company',
+      label: '업체 자격 확인',
+      desc: '운송업체 자격, 사업자 정보, 직영차량 운행 확약을 확인합니다.'
+    },
+    '차량검토 기준자료': {
+      cls: 'foundation',
+      label: '차량 기준 확인',
+      desc: '배정차량과 운행계획을 대조하기 위한 기준자료입니다.'
+    },
+    '차량별 필수서류': {
+      cls: 'vehicle',
+      label: '차량별 대조',
+      desc: '보험, 등록증, 등록원부, 교통안전정보, 점검표를 차량별로 확인합니다.'
+    }
+  };
+  const topMessage = attention.length
+    ? `먼저 확인할 항목 ${attention.length}건이 있습니다.`
+    : '먼저 볼 보완·확인 항목은 없습니다. 그래도 원본 서류는 담당자가 최종 확인하세요.';
+
+  const itemHtml = (r, idx, localIdx) => {
+    const phrase = state.requiredRequests[idx];
+    const showCopy = phrase && phrase !== '보완요청 문구 없음';
+    const isFoundation = r.group === '차량검토 기준자료';
+    const label = isFoundation ? `기준 ${localIdx + 1}` : '';
+    const location = r.location || '확인된 위치 없음';
+    return `<details class="required-doc-item status-${statusClass(r.status)}${isFoundation ? ' foundation-item' : ''}" ontoggle="syncRequiredToggleLabel(this)">
+      <summary>
+        <span class="required-doc-title">
+          <span class="required-title-line">
+            ${label ? `<span class="foundation-num">${escapeHtml(label)}</span>` : ''}
+            <strong>${escapeHtml(r.name)}</strong>
+            ${statusBadge(r.status)}
+          </span>
+          <em>${escapeHtml(r.check)}</em>
+          <span class="required-file-line">파일: ${escapeHtml(location)}</span>
+        </span>
+        <span class="required-doc-status">
+          ${showCopy ? `<button class="btn-sm-ghost copy-top" type="button" onclick="event.stopPropagation(); copyRequiredRequest(${idx})">문구 복사</button>` : ''}
+          <button class="btn-sm-ghost required-toggle" type="button" onclick="event.preventDefault(); event.stopPropagation(); this.closest('details').open = !this.closest('details').open; this.textContent = this.closest('details').open ? '접기' : '상세보기';">상세보기</button>
+        </span>
+      </summary>
+      <div class="required-doc-tree">
+        <div class="tree-row"><span>파일 위치</span><p>${escapeHtml(location)}</p></div>
+        <div class="tree-row"><span>확인할 사항</span><p>${escapeHtml(r.check)}</p></div>
+        <div class="tree-row"><span>담당자가 할 일</span><p>${escapeHtml(r.action)}</p></div>
+        <div class="tree-row request-box"><span>보완요청 문구</span><p>${escapeHtml(phrase)}</p></div>
+      </div>
+    </details>`;
+  };
+
+  el.innerHTML = `
+    <div class="required-result-summary compact">
+      <span><span class="clip-mini" aria-hidden="true">📎</span>${escapeHtml(topMessage)}</span>
+      <div class="required-counts">
+        <span class="summary-chip ok">확인완료 ${counts.ok}</span>
+        <span class="summary-chip info">PDF 위치 후보 ${counts.source}</span>
+        <span class="summary-chip warn">직접확인 ${counts.direct}</span>
+        <span class="summary-chip bad">보완·못 찾음 ${counts.miss}</span>
+      </div>
+    </div>
+    <div class="required-toolbar">
+      <button class="ghost-btn compact-btn" type="button" onclick="expandAllRequiredDocs()">전체 펼치기</button>
+      <button class="ghost-btn compact-btn" type="button" onclick="collapseAllRequiredDocs()">전체 접기</button>
+    </div>
+    <div class="required-groups">
+      ${groups.map((group, groupIdx) => {
+        const meta = groupMeta[group];
+        const groupRows = rows.map((r, idx) => ({ r, idx })).filter(x => x.r.group === group);
+        return `<section class="required-group-block group-${meta.cls}">
+          <div class="required-group-head">
+            <div>
+              <h3><span class="required-group-num">${String(groupIdx + 1).padStart(2, '0')}</span> ${escapeHtml(group)}</h3>
+              <p>${escapeHtml(meta.desc)}</p>
+            </div>
+            <span>${escapeHtml(meta.label)}</span>
+          </div>
+          <div class="required-lines">
+            ${groupRows.map((x, localIdx) => itemHtml(x.r, x.idx, localIdx)).join('')}
+          </div>
+        </section>`;
+      }).join('')}
+    </div>`;
+}
+
+function statusClass(status) {
+  if (status === ST_OK) return 'ok';
+  if (status === ST_SUBMIT) return 'submit';
+  if (status === ST_DIRECT) return 'direct';
+  if (status === ST_NEED) return 'need';
+  if (status === ST_MISS) return 'miss';
+  if (status === ST_OCR) return 'source';
+  return 'na';
+}
+
+function formatPrice(n) {
+  return Number(n || 0).toLocaleString('ko-KR');
+}
+
+function renderDocumentStatus() {
+  const tbody = $('#docStatusTbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  const groups = {};
+  state.docRows.forEach(r => { (groups[r.group] = groups[r.group] || []).push(r); });
+  const groupOrder = ['계약조건별 서류', '업체 확인 서류', '차량검토 기준자료', '차량별 필수서류'];
+  const orderedGroups = groupOrder
+    .filter(grp => groups[grp])
+    .map(grp => [grp, groups[grp]])
+    .concat(Object.entries(groups).filter(([grp]) => !groupOrder.includes(grp)));
+  orderedGroups.forEach(([grp, rows]) => {
+    const th = document.createElement('tr');
+    th.innerHTML = `<td colspan="3" class="group-label-row">${escapeHtml(grp)}</td>`;
+    tbody.appendChild(th);
+    rows.forEach(r => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td class="doc-name-cell">${escapeHtml(r.name)}</td><td>${statusBadge(r.status)}</td><td class="detail-cell">${escapeHtml(r.detail || '')}</td>`;
+      tbody.appendChild(tr);
+    });
+  });
+}
+
+function renderCompanySummary() {
+  const tbody = $('#companySummaryTbody');
+  if (!tbody) return;
+  tbody.innerHTML = state.companyRows.map(r => `<tr><td class="doc-name-cell">${escapeHtml(r.item)}</td><td>${statusBadge(r.status)}</td><td class="detail-cell">${escapeHtml(r.detail)}</td></tr>`).join('');
+}
+
+function renderVehicleMatches() {
+  const tbody = $('#vehicleMatchTbody');
+  if (!tbody) return;
+  if (!state.vehicleRows.length) {
+    tbody.innerHTML = `<tr><td colspan="7" class="empty-row">배정차량 리스트가 없어 차량별 확인표를 만들지 못했습니다.</td></tr>`;
+    return;
+  }
+  const rows = state.vehicleRows.map((r, i) => ({ r, i })).filter(({ r }) => {
+    const notOk = x => ![ST_OK, ST_SUBMIT, ST_NA].includes(x?.status);
+    if (state.vehicleFilter === 'insurance') return notOk(r.insurance);
+    if (state.vehicleFilter === 'registration') return notOk(r.regCert) || notOk(r.regLedger);
+    if (state.vehicleFilter === 'safety') return notOk(r.safety);
+    if (state.vehicleFilter === 'precheck') return notOk(r.preCheck);
+    if (state.vehicleFilter === 'problem') return r.finalStatus !== ST_OK;
+    return true;
+  });
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="7" class="empty-row">선택한 필터에 해당하는 차량이 없습니다.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map(({ r, i }) => {
+    const rowClass = r.finalStatus === ST_OK ? 'ok' : r.finalStatus === ST_NEED ? 'warn' : 'chk';
+    return `<tr class="vrow-${rowClass} vehicle-main-row" onclick="toggleVehicleDetail(${i})">
+      <td>${escapeHtml(r.hocha || '')}</td>
+      <td class="vno-cell"><strong>${escapeHtml(r.vno || r.vehicleNo || '')}</strong></td>
+      <td>${statusBadge(r.insurance.status)}<div class="mini-detail">${escapeHtml(shortInsurance(r.insurance))}</div></td>
+      <td>${statusBadge(regCombinedStatus(r))}<div class="mini-detail">등록증 ${shortStatus(r.regCert.status)}<br>원부 ${shortStatus(r.regLedger.status)}</div></td>
+      <td>${statusBadge(r.safety.status)}<div class="mini-detail">${escapeHtml(shortSafety(r.safety))}</div></td>
+      <td>${statusBadge(r.preCheck.status)}<div class="mini-detail">${escapeHtml(shortPreCheck(r.preCheck))}</div></td>
+      <td>${statusBadge(r.finalStatus)}<div class="mini-detail">상세보기 ▾</div></td>
+    </tr><tr id="vehicleDetail-${i}" class="vehicle-detail-row hidden"><td colspan="7">${vehicleDetailHtml(r)}</td></tr>`;
+  }).join('');
+}
+
+function regCombinedStatus(r) {
+  if (r.regCert.status === ST_OK || r.regLedger.status === ST_OK) {
+    if ([r.regCert.status, r.regLedger.status].includes(ST_DIRECT) || [r.regCert.status, r.regLedger.status].includes(ST_OCR)) return ST_DIRECT;
+    return ST_OK;
+  }
+  if ([r.regCert.status, r.regLedger.status].includes(ST_OCR)) return ST_OCR;
+  if ([r.regCert.status, r.regLedger.status].includes(ST_DIRECT)) return ST_DIRECT;
+  return ST_NEED;
+}
+
+function shortInsurance(x) { return x.period ? '계약기간 OK' : (x.status === ST_OCR ? 'PDF 위치 후보' : '계약기간 확인 필요'); }
+function shortSafety(x) { return x.expiry ? `검사 ${x.expiry}` : (x.status === ST_OCR ? 'PDF 위치 후보' : '검사유효기간 확인 필요'); }
+function shortPreCheck(x) { return x.status === ST_SUBMIT ? '점검표 제출됨' : (x.status === ST_OCR ? 'PDF 위치 후보' : '제출 여부 확인'); }
+
+function vehicleDetailHtml(r) {
+  return `<div class="detail-card-grid">
+    ${detailBlock('보험', r.insurance, ['period','coverage'])}
+    ${detailBlock('자동차등록증', r.regCert, ['inspection','stamp'])}
+    ${detailBlock('자동차등록원부', r.regLedger, ['inspection','stamp'])}
+    ${detailBlock('교통안전정보', r.safety, ['expiry','result','driver'])}
+    ${detailBlock('출발전 점검표', r.preCheck, ['result'])}
+  </div>`;
+}
+
+function detailBlock(title, data, keys) {
+  const sources = data.sources?.length ? data.sources.join(', ') : '확인된 위치 없음';
+  let extra = '';
+  keys.forEach(k => {
+    if (data[k]) extra += `<li>${escapeHtml(labelFor(k, title))}: ${escapeHtml(String(data[k]))}</li>`;
+  });
+  return `<div class="vehicle-detail-card"><h4>${escapeHtml(title)} ${statusBadge(data.status)}</h4><ul><li>파일 위치: ${escapeHtml(sources)}</li><li>확인할 사항: ${escapeHtml(data.detail || '')}</li>${extra}</ul></div>`;
+}
+function labelFor(k, title = '') {
+  if (k === 'result' && String(title).includes('점검')) return '점검표 표시';
+  return { period:'계약기간', coverage:'담보내용', inspection:'검사유효기간', stamp:'번호판 회수 스탬프 제외', expiry:'자동차검사 만료일', result:'종합결과', driver:'운전자 항목' }[k] || k;
+}
+
+
+function syncRequiredToggleLabel(detailsEl) {
+  const btn = detailsEl?.querySelector?.('.required-toggle');
+  if (btn) btn.textContent = detailsEl.open ? '접기' : '상세보기';
+}
+window.syncRequiredToggleLabel = syncRequiredToggleLabel;
+
+function expandAllRequiredDocs() { $$('#requiredDocsContent .required-doc-item').forEach(d => { d.open = true; syncRequiredToggleLabel(d); }); }
+function collapseAllRequiredDocs() { $$('#requiredDocsContent .required-doc-item').forEach(d => { d.open = false; syncRequiredToggleLabel(d); }); }
+window.expandAllRequiredDocs = expandAllRequiredDocs;
+window.collapseAllRequiredDocs = collapseAllRequiredDocs;
+
+function toggleVehicleDetail(i) { document.getElementById(`vehicleDetail-${i}`)?.classList.toggle('hidden'); }
+function expandAllDetails() { $$('.vehicle-detail-row').forEach(r => r.classList.remove('hidden')); }
+function collapseAllDetails() { $$('.vehicle-detail-row').forEach(r => r.classList.add('hidden')); }
+function setVehicleFilter(filter) {
+  state.vehicleFilter = filter;
+  $$('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.filter === filter));
+  renderVehicleMatches();
+}
+function updateAnalysisActionBar() {
+  const btn = $('#actionOcrNeededBtn');
+  if (!btn) return;
+  const count = state.docAnalyses.filter(a => a.needsOcr || (a.pageDiagnostics || []).some(p => p.ocrStatus === 'needed')).length;
+  btn.disabled = !count;
+  btn.textContent = count ? `서류 위치 확인 (${count})` : '서류 위치 후보 없음';
+}
+
+function showResultSections() {
+  $('#step6')?.classList.remove('hidden');
+  $('#notCheckedYet')?.classList.add('hidden');
+  document.body.classList.add('has-results');
+}
+
+function refreshResultSidebar(activeId) {
+  const links = $$('.result-side-link');
+  if (!links.length) return;
+  const ids = ['resultSummary','documentStatus','requiredDocs','vehicleMatch','supplementRequest'];
+  const current = activeId || ids.find(id => {
+    const el = document.getElementById(id);
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return r.top <= 130 && r.bottom > 130;
+  }) || 'resultSummary';
+  links.forEach(link => {
+    const id = link.dataset.target;
+    const target = document.getElementById(id);
+    const passed = target ? target.getBoundingClientRect().top < 90 : false;
+    link.classList.toggle('active', id === current);
+    link.classList.toggle('passed', passed && id !== current);
+  });
+}
+
+function initResultSidebar() {
+  $$('.result-side-link').forEach(link => {
+    link.addEventListener('click', e => {
+      e.preventDefault();
+      const id = link.dataset.target;
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      refreshResultSidebar(id);
+    });
+  });
+  let ticking = false;
+  window.addEventListener('scroll', () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => { refreshResultSidebar(); ticking = false; });
+  });
+}
+
+// ── 보완요청 ─────────────────────────────────────────────────
+function generateAndShowSupplement() {
+  const company = $('#companyName')?.value?.trim() || '';
+  const startDate = $('#startDate')?.value || '';
+  const endDate = $('#endDate')?.value || '';
+  const event = $('#eventName')?.value?.trim() || '';
+  const prefix = company ? `${company}에서 ` : '';
+  const evStr = event ? ` (${event})` : '';
+  const period = endDate ? `${startDate} ~ ${endDate}` : startDate;
+  const lines = [
+    `제출하신 전세버스 임차${evStr} 관련 서류를 검토한 결과, ${prefix}배정차량 리스트 기준으로 아래 사항의 확인 또는 보완이 필요합니다.`,
+    `이용기간: ${period}`,
+    '',
+  ];
+  let count = 1;
+  [...state.docRows, ...state.companyRows]
+    .filter(r => [ST_NEED, ST_MISS, ST_DIRECT, ST_OCR].includes(r.status))
+    .forEach(r => {
+      lines.push(`${count}. ${r.name || r.item}`);
+      lines.push(`- ${r.detail}`);
+      lines.push(`- 조치: ${r.action || '담당자 확인'}`);
+      lines.push('');
+      count++;
+    });
+  const vehicleIssues = state.vehicleRows.filter(r => r.finalStatus !== ST_OK);
+  if (vehicleIssues.length) {
+    lines.push('[차량별 확인 필요]');
+    vehicleIssues.forEach(r => {
+      const issues = [];
+      if (r.insurance.status !== ST_OK) issues.push(`보험(${r.insurance.status})`);
+      if (r.regCert.status !== ST_OK) issues.push(`등록증(${r.regCert.status})`);
+      if (r.regLedger.status !== ST_OK) issues.push(`등록원부(${r.regLedger.status})`);
+      if (r.safety.status !== ST_OK) issues.push(`교통안전정보(${r.safety.status})`);
+      if (issues.length) lines.push(`- ${r.vno || r.vehicleNo}: ${issues.join(', ')}`);
+    });
+    lines.push('');
+  }
+  const ocrNeed = state.docAnalyses.filter(a => a.needsOcr && a.ocrStatus !== '쪽수 정리');
+  if (ocrNeed.length) {
+    lines.push('[쪽수 확인 가능 파일]');
+    ocrNeed.forEach(a => lines.push(`- ${a.name}: 스캔본 또는 텍스트 부족으로 쪽수 확인 가능`));
+    lines.push('');
+  }
+  lines.push('보완 서류는 출발일 전까지 제출해 주시면 감사하겠습니다.');
+  lines.push('자동 분석 결과가 불확실한 항목은 담당자가 직접 확인할 예정입니다.');
+  state.requestText = lines.join('\n');
+  const ta = $('#requestText');
+  if (ta) ta.value = state.requestText;
+}
+
+// ── 내보내기/복사 ─────────────────────────────────────────────
+function exportCSV() {
+  if (!state.checked) { showToast('먼저 콕검을 실행해주세요.', 'warn'); return; }
+  const rows = [['호차','차량번호','운전자','연락처','보험','자동차등록증','자동차등록원부','교통안전','최종']];
+  state.vehicleRows.forEach(r => rows.push([r.hocha||'', r.vno||r.vehicleNo||'', r.driver||'', r.phone||'', r.insurance.status||'', r.regCert.status||'', r.regLedger.status||'', r.safety.status||'', r.finalStatus||'']));
+  rows.push([]); rows.push(['업체·계약조건 확인','상태','비고']); state.companyRows.forEach(r => rows.push([r.item, r.status, r.detail||'']));
+  rows.push([]); rows.push(['전체 서류 제출현황','상태','비고']); state.docRows.forEach(r => rows.push([r.name, r.status, r.detail||'']));
+  const csv = '\uFEFF' + rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+  a.download = `버스콕검_${$('#startDate')?.value||'결과'}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
+}
+
+function copyText(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  navigator.clipboard.writeText(el.tagName === 'TEXTAREA' ? el.value : el.innerText).then(() => showToast('복사됐어요.', 'success'));
+}
+function copyResultTable() {
+  if (!state.checked) return;
+  const lines = [`=== 버스콕검 결과 ===`, `출발일: ${$('#startDate')?.value}`, ''];
+  lines.push('[배정차량]');
+  state.vehicleRows.forEach(r => lines.push(`${r.hocha} ${r.vno||r.vehicleNo} | 보험:${r.insurance.status} | 등록증:${r.regCert.status} | 원부:${r.regLedger.status} | 안전정보:${r.safety.status} | 최종:${r.finalStatus}`));
+  navigator.clipboard.writeText(lines.join('\n')).then(() => showToast('결과표가 복사됐어요.', 'success'));
+}
+
+// ── 추정가격 ─────────────────────────────────────────────────
+function parsePrice(raw) { return Number(String(raw || '').replace(/[^0-9]/g, '')) || 0; }
+function formatPriceInput(el) {
+  if (!el) return 0;
+  const raw = String(el.value || '').replace(/[^0-9]/g, '');
+  if (!raw) { el.value = ''; return 0; }
+  const num = Number(raw); el.value = num.toLocaleString('ko-KR'); return num;
+}
+function updatePriceHint() {
+  const el = $('#priceHint'); const badge = $('#priceStatusBadge'); const input = $('#estimatedPrice'); const priceVal = formatPriceInput(input); const ctype = $('#contractType')?.value || '';
+  if (!el) return;
+  if (!priceVal) { el.className = 'price-hint show wait'; el.textContent = '추정가격 입력 시 1천만원 기준 안내가 표시됩니다.'; if (badge) { badge.textContent = '안내 대기'; badge.className = 'mini-note wait-note'; } }
+  else if (priceVal >= 10000000) { el.className = 'price-hint show warn'; el.textContent = ctype === '수의계약' ? '1천만원 이상입니다. 수의계약의 경우 직접생산확인증명서 확인이 필요할 수 있습니다.' : !ctype ? '1천만원 이상입니다. 계약방식을 함께 확인한 뒤 직접생산확인증명서 필요 여부를 확인하세요.' : '1천만원 이상입니다. 직접생산확인증명서 확인 필요 여부를 함께 확인하세요.'; if (badge) { badge.textContent = '직접생산확인증명서 확인 필요'; badge.className = 'mini-note warn-note'; } }
+  else { el.className = 'price-hint show info'; el.textContent = '1천만원 미만입니다. 일반 서류 확인 흐름으로 진행하세요.'; if (badge) { badge.textContent = '일반 확인 진행'; badge.className = 'mini-note ok-note'; } }
+}
+
+function updatePreCheckCount() {
+  const total = $$('.pre-check-item input[type=checkbox]').length;
+  const checked = $$('.pre-check-item input[type=checkbox]:checked').length;
+  const el = $('#preCheckCounter'); if (el) el.textContent = `(${checked}/${total})`;
+}
+
+// ── 컨텍스트 헬퍼 ─────────────────────────────────────────────
+function getContextAround(text, keyword, radius) {
+  const noSpaceKw = normalizeVehicleNo(keyword);
+  const noSpaceText = compact(text);
+  const idx = noSpaceText.indexOf(noSpaceKw);
+  if (idx === -1) return '';
+  return noSpaceText.slice(Math.max(0, idx - radius), idx + noSpaceKw.length + radius);
+}
+function extractDriverFromContext(ctx) { const m = ctx.match(/[가-힣]{2,4}(?=운전|기사|드라이버|010|011|016|017|018|019)/); return m ? m[0] : ''; }
+function extractPhoneFromContext(ctx) { const m = ctx.match(/0\d{1,2}-?\d{3,4}-?\d{4}/); return m ? m[0] : ''; }
+function extractHochaFromContext(ctx) { const m = ctx.match(/\d+호차/); return m ? m[0] : ''; }
+
+// ── 초기화 ───────────────────────────────────────────────────
+function resetAllData() {
+  if (!confirm('배정차량, 출발일, 추정가격, 업로드 파일, 확인 결과를 모두 초기화할까요?')) return;
+  Object.assign(state, { assignFiles: [], docFiles: [], docAnalyses: [], assignedVehicles: [], vehicleSource: 'none', vehicleConfirmed: false, allText: '', docRows: [], companyRows: [], vehicleRows: [], vehicleFilter: 'all', requestText: '', checked: false, ocrRunning: false });
+  ['startDate','companyName','eventName','endDate','contractType','estimatedPrice'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const optionalDetails = $('#optionalDetails'); if (optionalDetails) optionalDetails.open = false;
+  const priceHint = $('#priceHint'); if (priceHint) { priceHint.className = 'price-hint show wait'; priceHint.textContent = '추정가격 입력 시 1천만원 기준 안내가 표시됩니다.'; }
+  const priceBadge = $('#priceStatusBadge'); if (priceBadge) { priceBadge.textContent = '안내 대기'; priceBadge.className = 'mini-note wait-note'; }
+  renderAssignFileList(); renderDocFileList(); renderVehicleTable(); updatePreCheckCount();
+  $('#step6')?.classList.add('hidden'); $('#notCheckedYet')?.classList.remove('hidden'); document.body.classList.remove('has-results');
+  const requestText = $('#requestText'); if (requestText) requestText.value = '';
+  const extractBtn = $('#extractVehicleBtn'); if (extractBtn) extractBtn.textContent = '배정차량 추출하기';
+  updateStepNav(); showToast('전체 입력을 초기화했어요.', 'success'); window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ── 이벤트 바인딩 ────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  document.title = `버스콕검 ${VERSION} — 전세버스 임차 서류 확인 도구`;
+  $$('.version-tag').forEach(el => { el.textContent = VERSION; });
+  $$('.eyebrow').forEach(el => { el.textContent = `배정차량 리스트 기준 확인 · ${VERSION}`; });
+  $$('.safe-chip').forEach(el => { el.textContent = '🛡 파일 내용 외부 전송 없음'; });
+
+  const depEl = $('#startDate'); if (depEl) { depEl.value = ''; depEl.addEventListener('change', updateStepNav); }
+  $('#endDate')?.addEventListener('change', () => { if (state.checked) rebuildAllResults(); });
+  $('#contractType')?.addEventListener('change', () => { updatePriceHint(); if (state.checked) rebuildAllResults(); });
+  $('#estimatedPrice')?.addEventListener('input', () => { updatePriceHint(); if (state.checked) rebuildAllResults(); });
+
+  const aZone = $('#assignDropZone'); const aInput = $('#assignFileInput');
+  if (aZone && aInput) {
+    aZone.addEventListener('click', () => aInput.click());
+    aZone.addEventListener('dragover', e => { e.preventDefault(); aZone.classList.add('dragover'); });
+    aZone.addEventListener('dragleave', () => aZone.classList.remove('dragover'));
+    aZone.addEventListener('drop', e => { e.preventDefault(); aZone.classList.remove('dragover'); addAssignFiles(e.dataTransfer.files); });
+    aInput.addEventListener('change', e => { addAssignFiles(e.target.files); aInput.value = ''; });
+  }
+  $('#extractVehicleBtn')?.addEventListener('click', doExtractVehicles);
+  $('#confirmVehiclesBtn')?.addEventListener('click', confirmVehicleList);
+  $('#addVehicleBtn')?.addEventListener('click', addVehicleRow);
+  $('#applyExtractedVehiclesBtn')?.addEventListener('click', () => showToast('현재 미리보기 내용이 적용되어 있어요. 필요하면 표에서 바로 수정하세요.', 'success'));
+  $('#editExtractedVehiclesBtn')?.addEventListener('click', () => $('#vehicleTbody input')?.focus());
+
+  const dZone = $('#docDropZone'); const dInput = $('#docFileInput');
+  if (dZone && dInput) {
+    dZone.addEventListener('click', () => dInput.click());
+    dZone.addEventListener('dragover', e => { e.preventDefault(); dZone.classList.add('dragover'); });
+    dZone.addEventListener('dragleave', () => dZone.classList.remove('dragover'));
+    dZone.addEventListener('drop', e => { e.preventDefault(); dZone.classList.remove('dragover'); addDocFiles(e.dataTransfer.files); });
+    dInput.addEventListener('change', e => { addDocFiles(e.target.files); dInput.value = ''; });
+  }
+  $('#addMoreDocTopBtn')?.addEventListener('click', () => dInput?.click());
+  $('#runCheckBtn')?.addEventListener('click', runCheck);
+  $('#actionOcrNeededBtn')?.addEventListener('click', () => { document.getElementById('requiredDocs')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+  $('#actionExpandAllBtn')?.addEventListener('click', expandAllDetails);
+  $('#actionCollapseAllBtn')?.addEventListener('click', collapseAllDetails);
+  $('#vehicleExpandAllBtn')?.addEventListener('click', expandAllDetails);
+  $('#vehicleCollapseAllBtn')?.addEventListener('click', collapseAllDetails);
+  $$('.filter-btn').forEach(b => b.addEventListener('click', () => setVehicleFilter(b.dataset.filter || 'all')));
+  $('#exportCsvBtn')?.addEventListener('click', exportCSV);
+  $('#copyResultBtn')?.addEventListener('click', copyResultTable);
+  $('#copyRequestBtn')?.addEventListener('click', () => copyText('requestText'));
+  $('#resetAllBtn')?.addEventListener('click', resetAllData);
+  $$('.scroll-top-btn').forEach(b => b.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' })));
+  document.addEventListener('change', e => { if (e.target.closest('.pre-check-item')) updatePreCheckCount(); });
+  window.addEventListener('scroll', () => { $('#topbar')?.classList.toggle('scrolled', window.scrollY > 8); });
+  initResultSidebar();
+  updateStepNav(); renderDocFileList(); updateAnalysisActionBar();
+});

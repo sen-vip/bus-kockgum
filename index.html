@@ -3,284 +3,434 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>버스콕검 v0.1.3 · 전세버스 임차 서류 확인 도구</title>
+  <title>버스콕검 v0.2.14 — 전세버스 임차 서류 확인 도구</title>
   <link rel="stylesheet" href="style.css" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
-  <a id="top"></a>
-  <header class="topbar" aria-label="상단 고정바">
-    <div class="topbar-inner">
-      <button class="brand-mini" type="button" data-scroll-target="top" aria-label="맨 위로 이동">
-        <span class="brand-emoji">🚌</span>
-        <span>
-          <strong>버스콕검 <small>v0.1.3</small></strong>
-          <em>전세버스 임차 서류 확인</em>
-        </span>
-      </button>
 
-      <span class="safe-chip">🛡️ 외부 전송 없음</span>
+<!-- 토스트 -->
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-      <nav class="step-nav" aria-label="진행 단계">
-        <button id="stepBtn1" class="step-chip" type="button" data-scroll-target="basicInfo">
-          <span class="step-num">①</span>
-          <span class="step-detail">
-            <span class="step-lbl">출발일</span>
-            <span id="stepState1" class="step-st">입력 필요</span>
-          </span>
-        </button>
-        <span class="step-sep" aria-hidden="true">›</span>
-        <button id="stepBtn2" class="step-chip" type="button" data-scroll-target="uploadDocs">
-          <span class="step-num">②</span>
-          <span class="step-detail">
-            <span class="step-lbl">서류 업로드</span>
-            <span id="stepState2" class="step-st">대기</span>
-          </span>
-        </button>
-        <span class="step-sep" aria-hidden="true">›</span>
-        <button id="stepBtn3" class="step-chip" type="button" data-scroll-target="actionCard">
-          <span class="step-num">③</span>
-          <span class="step-detail">
-            <span class="step-lbl">콕검</span>
-            <span id="stepState3" class="step-st">대기</span>
-          </span>
-        </button>
-      </nav>
+<!-- ── 상단 고정바 ───────────────────────────────────── -->
+<header id="topbar" class="topbar">
+  <div class="topbar-brand">
+    <a href="#top" class="brand-link">🚌 버스콕검</a>
+    <span class="version-tag">v0.2.14</span>
+  </div>
 
-      <a class="github-link" href="https://sen-vip.github.io/bus-kockgum/" target="_blank" rel="noopener noreferrer">[github]</a>
-      <button class="toplink" type="button" data-scroll-target="top">↑ 맨위로</button>
-    </div>
-  </header>
+  <!-- 6단계 네비 -->
+  <nav class="step-nav" id="stepNav" aria-label="진행 단계">
+    <a class="step-item step-active"  data-step="1" href="#step1Card">① 출발일</a>
+    <span class="step-sep" aria-hidden="true">›</span>
+    <a class="step-item step-pending" data-step="2" href="#step2Card">② 배정차량</a>
+    <span class="step-sep" aria-hidden="true">›</span>
+    <a class="step-item step-pending" data-step="3" href="#step3Card">③ 차량확인</a>
+    <span class="step-sep" aria-hidden="true">›</span>
+    <a class="step-item step-pending" data-step="4" href="#step4Card">④ 서류업로드</a>
+    <span class="step-sep" aria-hidden="true">›</span>
+    <a class="step-item step-pending" data-step="5" href="#step5Card">⑤ 콕검실행</a>
+    <span class="step-sep" aria-hidden="true">›</span>
+    <a class="step-item step-pending" data-step="6" href="#step6">⑥ 결과확인</a>
+  </nav>
 
-  <main class="app-shell">
-    <section class="hero panel">
+  <div class="topbar-right">
+    <span class="safe-chip">🛡 파일 내용 외부 전송 없음</span>
+    <a href="https://sen-vip.github.io/bus-kockgum/" target="_blank" rel="noopener" class="github-chip">github</a>
+    <button id="resetAllBtn" class="reset-all-btn" type="button" title="전체 입력 초기화">초기화</button>
+    <button class="toplink scroll-top-btn" aria-label="맨 위로">↑</button>
+  </div>
+</header>
+<!-- 왼쪽 진행 단계 사이드바: 처음부터 항상 표시 -->
+<aside id="globalStepSidebar" class="global-step-sidebar" aria-label="전체 진행 단계">
+  <div class="result-side-title">진행 단계</div>
+  <div class="progress-side-list" aria-label="전체 진행 단계">
+    <a href="#step1Card" class="progress-side-link current" data-step-side="1"><span>STEP 1</span>출발일</a>
+    <a href="#step2Card" class="progress-side-link" data-step-side="2"><span>STEP 2</span>배정차량</a>
+    <a href="#step3Card" class="progress-side-link" data-step-side="3"><span>STEP 3</span>차량확인</a>
+    <a href="#step4Card" class="progress-side-link" data-step-side="4"><span>STEP 4</span>서류업로드</a>
+    <a href="#step5Card" class="progress-side-link" data-step-side="5"><span>STEP 5</span>콕검 실행</a>
+    <a href="#step6" class="progress-side-link" data-step-side="6"><span>STEP 6</span>검토 결과</a>
+  </div>
+  <div id="globalResultSubsteps" class="global-result-substeps" aria-label="검토 결과 확인 순서">
+    <div class="result-sub-title">결과 확인 순서</div>
+    <a href="#resultSummary" class="result-side-link result-step-link" data-target="resultSummary"><span>6-1</span>요약</a>
+    <a href="#documentStatus" class="result-side-link result-step-link" data-target="documentStatus"><span>6-2</span>제출파일 정리</a>
+    <a href="#requiredDocs" class="result-side-link result-step-link" data-target="requiredDocs"><span>6-3</span>필요서류 확인</a>
+    <a href="#vehicleMatch" class="result-side-link result-step-link" data-target="vehicleMatch"><span>6-4</span>차량별 확인</a>
+    <a href="#supplementRequest" class="result-side-link result-step-link" data-target="supplementRequest"><span>6-5</span>보완요청</a>
+  </div>
+</aside>
+
+<!-- ── 메인 ─────────────────────────────────────────── -->
+<main id="top" class="app-shell">
+
+  <!-- 히어로 -->
+  <section class="hero">
+    <div class="hero-inner">
+      <div class="hero-bus" aria-hidden="true">
+        <span class="bus-emoji">🚌</span>
+        <span class="bus-shadow"></span>
+      </div>
       <div class="hero-copy">
-        <p class="eyebrow">배정차량 리스트 기준 확인 · v0.1.3</p>
-        <h1>🚌 버스콕검</h1>
+        <p class="eyebrow">배정차량 리스트 기준 확인 · v0.2.14</p>
+        <h1 class="hero-title">버스콕검</h1>
         <p class="hero-subtitle">전세버스 임차 서류 확인 도구</p>
         <p class="hero-desc">업체 제출서류를 업로드하면 배정차량 리스트 기준으로 필수서류 · 차량번호 · 보험기간 · 검사유효기간을 한 번에 정리합니다. 자동 판정이 아니라, 담당자가 무엇을 확인해야 하는지 안내하는 도구입니다.</p>
-        <div class="hero-badges" aria-label="주요 특징">
-          <span>📋 배정차량 기준 확인</span>
-          <span>✍️ 보완요청 자동작성</span>
-          <span>🔎 스캔본은 직접확인 표시</span>
+        <div class="hero-chips" aria-label="주요 기능">
+          <span class="hero-chip">📋 배정차량 기준 확인</span>
+          <span class="hero-chip">✍️ 보완요청 자동작성</span>
+          <span class="hero-chip">📄 PDF 쪽수 안내</span>
         </div>
       </div>
-      <div class="hero-card" aria-hidden="true">
-        <div class="mini-window"><span></span><span></span><span></span></div>
-        <div class="mock-row strong"></div>
-        <div class="mock-row"></div>
-        <div class="mock-grid"><div></div><div></div><div></div></div>
-        <div class="mock-status">검토 결과: 보완 필요</div>
-      </div>
-    </section>
+    </div>
+  </section>
 
-    <!-- STEP 1 -->
-    <section id="basicInfo" class="panel section-card basic-redesign">
-      <div class="section-head">
-        <div>
-          <p class="section-kicker">STEP 1</p>
-          <h2>출발일 먼저 입력</h2>
-        </div>
-        <span class="help-chip required-chip">필수</span>
+  <!-- ───────────────────────────────────────────────── -->
+  <!-- STEP 1: 출발일 입력                               -->
+  <!-- ───────────────────────────────────────────────── -->
+  <section id="step1Card" class="panel section-card">
+    <div class="section-head">
+      <div>
+        <p class="section-kicker">STEP 1</p>
+        <h2>출발일 입력</h2>
       </div>
-      <div class="start-date-card">
-        <div class="start-date-copy">
-          <span class="mini-label">검토 기준일</span>
-          <strong>출발일은 꼭 필요해요</strong>
-          <p>보험기간과 자동차 검사유효기간을 이 날짜 기준으로 확인합니다.</p>
-        </div>
-        <label class="start-date-input">출발일 <strong class="required">필수</strong>
-          <input id="startDate" type="date" />
-        </label>
-      </div>
-      <div class="optional-info-card">
-        <div class="optional-title">
-          <div>
-            <strong>선택 정보</strong>
-            <p>입력하면 결과표와 보완요청 문구가 더 자연스러워져요.</p>
-          </div>
-          <span class="help-chip gray">선택 입력</span>
-        </div>
-        <div class="form-grid optional-grid">
-          <label>업체명 <span>선택</span>
-            <input id="companyName" type="text" placeholder="예: ○○관광" />
-          </label>
-          <label>행사명 <span>선택</span>
-            <input id="eventName" type="text" placeholder="예: 2026학년도 현장체험학습" />
-          </label>
-          <label>도착일 <span>선택</span>
-            <input id="endDate" type="date" />
-          </label>
-          <label>계약방식 <span>선택</span>
-            <select id="contractType">
-              <option value="">선택 안 함</option>
-              <option value="수의계약">수의계약</option>
-              <option value="2인이상 전자견적">2인이상 전자견적</option>
-              <option value="입찰">입찰</option>
-            </select>
-          </label>
-          <label class="price-field">추정가격 <span>선택 · 1천만원 기준 안내</span>
-            <input id="estimatedPrice" type="text" placeholder="예: 9,900,000" />
-          </label>
-        </div>
-        <div id="priceHint" class="price-hint neutral">
-          추정가격을 입력하면 직접생산확인증명서 확인 필요 여부를 안내합니다.
-        </div>
-      </div>
-    </section>
+      <span class="help-chip blue required-chip">필수</span>
+    </div>
+    <p class="muted-text">출발일은 꼭 필요해요. 보험기간과 검사유효기간을 이 날짜 기준으로 확인합니다.</p>
 
-    <!-- STEP 2 -->
-    <section id="uploadDocs" class="panel section-card">
-      <div class="section-head">
-        <div>
-          <p class="section-kicker">STEP 2</p>
-          <h2>서류 업로드</h2>
+    <div class="core-input-grid">
+      <div class="field-wrap required core-field date-field">
+        <div class="field-title-row">
+          <label for="startDate">출발일 <span class="req-star">*</span></label>
+          <span class="mini-note required-note">필수 입력</span>
         </div>
-        <span class="help-chip blue">PDF · JPG · PNG</span>
+        <input type="date" id="startDate" class="date-input" />
+        <p class="field-help">서류 유효기간 확인 기준일입니다.</p>
       </div>
-
-      <div id="dropZone" class="drop-zone" tabindex="0" role="button" aria-label="파일 업로드 영역. 클릭하거나 파일을 끌어다 놓으세요">
-        <input id="fileInput" type="file" multiple accept=".pdf,.jpg,.jpeg,.png" />
-        <div class="drop-icon">📎</div>
-        <strong>PDF 서류를 여기에 끌어다 놓거나 클릭하세요</strong>
-        <p>여러 파일을 한 번에 올릴 수 있어요</p>
-        <span class="drop-hint">텍스트 추출 가능한 PDF 우선 지원</span>
-      </div>
-
-      <div id="fileStatusBox" class="file-status-box">
-        <div id="emptyUpload" class="empty-upload">아직 업로드된 파일이 없어요</div>
-        <div id="uploadedArea" class="hidden">
-          <div class="file-status-header">
-            <span id="fileStatusTitle" class="file-status-title"></span>
-            <div class="file-status-actions">
-              <button id="addMoreBtn" class="ghost-btn" type="button">파일 더 추가하기</button>
-              <button id="clearBtn" class="ghost-btn danger" type="button">전체 삭제</button>
-            </div>
-          </div>
-          <ul id="fileList" class="file-list" aria-live="polite"></ul>
-          <div id="imageWarning" class="image-warning hidden">
-            이미지·스캔본 파일이 포함되어 있어요. 차량번호가 자동으로 읽히지 않을 수 있습니다. 콕검 후 배정차량 표에서 직접 보정해 주세요.
-          </div>
+      <div class="field-wrap core-field price-field">
+        <div class="field-title-row">
+          <label for="estimatedPrice">추정가격</label>
+          <span id="priceStatusBadge" class="mini-note wait-note">안내 대기</span>
         </div>
+        <input type="text" id="estimatedPrice" inputmode="numeric" placeholder="금액 입력 예: 9,900,000" autocomplete="off" />
+        <p class="field-help">추정가격을 입력하면 직접생산확인증명서 확인 필요 여부를 안내합니다.</p>
+        <div id="priceHint" class="price-hint show wait">추정가격 입력 시 1천만원 기준 안내가 표시됩니다.</div>
       </div>
-
-      <div class="upload-guide doc-bundles">
-        <strong>올리면 좋은 서류</strong>
-        <div class="bundle-grid">
-          <div><b>기준자료</b><span>차량 및 운전기사 배정 현황, 차량운행계획서</span></div>
-          <div><b>차량별 확인</b><span>보험 가입증명서, 자동차등록증/등록원부, 교통안전정보 통보서</span></div>
-          <div><b>업체 확인</b><span>운송사업등록증, 직영차량 운행각서</span></div>
-          <div><b>출발 전</b><span>출발 전 교육 및 차량안전점검표</span></div>
-          <div><b>계약조건별</b><span>추정가격 1천만원 이상 수의계약은 직접생산확인증명서 확인</span></div>
-        </div>
-        <p class="scan-note">스캔본도 괜찮아요. 다만 글자를 자동으로 읽기 어려운 경우에는 직접확인 항목으로 정리합니다.</p>
-      </div>
-    </section>
-
-    <!-- STEP 3: 콕검 시작 -->
-    <section id="actionCard" class="panel section-card action-card">
-      <div class="section-head">
-        <div>
-          <p class="section-kicker">STEP 3</p>
-          <h2>콕검 시작하기</h2>
-        </div>
-        <span id="actionStateChip" class="help-chip gray">출발일 입력 필요</span>
-      </div>
-      <div class="run-box">
-        <div>
-          <button id="runCheckBtn" class="primary-btn" type="button" disabled>출발일을 먼저 입력해주세요</button>
-          <p id="runMessage" class="run-msg">출발일과 서류를 모두 입력하면 콕검을 시작할 수 있어요.</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- 콕검 전 안내 -->
-    <div id="preCheckNotice" class="pre-check-notice panel">
-      <p class="pre-check-icon">🔍</p>
-      <strong>아직 콕검을 시작하지 않았어요</strong>
-      <p>출발일을 입력하고 서류를 업로드한 뒤, 위 콕검 시작 버튼을 눌러주세요.<br>결과는 이 아래에 나타납니다.</p>
     </div>
 
-    <!-- 배정차량 (콕검 후) -->
-    <section id="assignedVehicles" class="panel section-card result-panel hidden">
-      <div class="section-head">
-        <div>
-          <p class="section-kicker">배정차량</p>
-          <h2>배정차량 리스트 확인</h2>
+    <!-- 선택 정보 접힘 -->
+    <details class="optional-block" id="optionalDetails">
+      <summary class="optional-summary">
+        선택 정보
+        <span class="optional-hint">입력하면 보완요청 문구가 더 자연스러워져요</span>
+        <span class="details-caret">▾</span>
+      </summary>
+      <div class="optional-grid">
+        <div class="field-wrap">
+          <label for="companyName">업체명</label>
+          <input type="text" id="companyName" placeholder="예: ○○관광" />
         </div>
+        <div class="field-wrap">
+          <label for="eventName">행사명</label>
+          <input type="text" id="eventName" placeholder="예: 수학여행" />
+        </div>
+        <div class="field-wrap">
+          <label for="endDate">도착일</label>
+          <input type="date" id="endDate" />
+        </div>
+        <div class="field-wrap">
+          <label for="contractType">계약방식</label>
+          <select id="contractType">
+            <option value="">-- 선택 --</option>
+            <option value="수의계약">수의계약</option>
+            <option value="경쟁입찰">경쟁입찰</option>
+            <option value="제한경쟁">제한경쟁</option>
+            <option value="지명경쟁">지명경쟁</option>
+          </select>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <!-- ───────────────────────────────────────────────── -->
+  <!-- STEP 2: 배정차량 입력                      -->
+  <!-- ───────────────────────────────────────────────── -->
+  <section id="step2Card" class="panel section-card">
+    <div class="section-head">
+      <div>
+        <p class="section-kicker">STEP 2</p>
+        <h2>배정차량 입력</h2>
+      </div>
+      <div class="section-actions">
+        <span class="help-chip gray">차량번호 추출용</span>
+        <button id="extractVehicleTopHint" class="ghost-btn compact-btn" type="button" onclick="document.getElementById('assignFileInput')?.click()">+ 파일 추가</button>
+      </div>
+    </div>
+    <p class="muted-text">
+      차량 및 운전기사 배정 현황, 차량운행계획서 등 <strong>차량번호가 있는 파일</strong>을 먼저 올려주세요. 파일이 없으면 직접 입력해도 됩니다.
+    </p>
+
+    <div class="drop-zone" id="assignDropZone" tabindex="0" role="button" aria-label="배정차량 입력">
+      <div class="drop-icon">📋</div>
+      <p class="drop-main">배정차량 파일을 여기에 올려주세요</p>
+      <p class="drop-sub">PDF · 이미지 · 드래그하거나 클릭</p>
+    </div>
+    <input type="file" id="assignFileInput" multiple accept=".pdf,image/*" class="hidden" />
+
+    <div id="assignFileStatus" class="file-status-box empty">
+      <span class="status-empty-msg">아직 업로드된 파일이 없어요</span>
+    </div>
+
+    <div class="action-row">
+      <button id="extractVehicleBtn" class="primary-btn" type="button">배정차량 추출하기</button>
+    </div>
+  </section>
+
+  <!-- ───────────────────────────────────────────────── -->
+  <!-- STEP 3: 배정차량 리스트 확인                      -->
+  <!-- ───────────────────────────────────────────────── -->
+  <section id="step3Card" class="panel section-card">
+    <div class="section-head">
+      <div>
+        <p class="section-kicker">STEP 3</p>
+        <h2>배정차량 리스트 확인</h2>
+      </div>
+      <div class="section-actions">
         <span id="vehicleCountChip" class="help-chip gray">대기 중</span>
       </div>
-      <div id="vehicleSourceNote" class="vehicle-source-note hidden"></div>
-      <p class="muted-text">업체 제출자료에서 차량번호와 운전자를 자동 추출합니다. 틀린 내용은 표에서 직접 수정할 수 있어요.</p>
-      <div id="vehicleEmpty" class="empty-box">
-        배정차량을 자동으로 찾지 못했어요.<br>
-        스캔본이거나 표가 이미지로 들어간 경우 자동 인식이 어렵습니다.<br>
-        <strong>직접 입력으로 보정</strong>하거나 <strong>찾은 차량번호로 표 만들기</strong>를 눌러 주세요.
-      </div>
-      <div id="vehicleTableWrap" class="table-wrap hidden">
-        <table class="data-table">
-          <thead>
-            <tr><th>호차</th><th>차량번호</th><th>운전자</th><th>연락처</th><th>비고</th><th>삭제</th></tr>
-          </thead>
-          <tbody id="vehicleTbody"></tbody>
-        </table>
-      </div>
-      <div class="action-row">
-        <button id="addVehicleBtn" class="ghost-btn" type="button">직접 입력으로 보정</button>
-        <button id="tempVehicleBtn" class="ghost-btn" type="button">찾은 차량번호로 표 만들기</button>
-      </div>
-    </section>
+    </div>
+    <p class="muted-text">추출된 차량번호를 확인하고 틀린 내용은 직접 수정하세요. 이 목록이 콕검의 기준이 됩니다.</p>
 
-    <!-- 검토 결과 요약 (콕검 후) -->
-    <section id="resultSummary" class="panel section-card result-panel hidden">
+    <div id="vehicleSourceNote" class="source-note hidden"></div>
+
+    <div id="vehicleEmpty" class="empty-box">
+      STEP 2에서 파일을 업로드하고 <strong>추출하기</strong> 버튼을 눌러주세요.<br>
+      스캔본이라 자동으로 찾기 어려운 경우 아래 버튼으로 직접 입력할 수 있어요.
+    </div>
+
+    <div id="vehicleTableWrap" class="table-wrap hidden">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>호차</th>
+            <th>차량번호</th>
+            <th>운전자</th>
+            <th>연락처</th>
+            <th>비고</th>
+            <th>삭제</th>
+          </tr>
+        </thead>
+        <tbody id="vehicleTbody"></tbody>
+      </table>
+    </div>
+
+    <div class="action-row vehicle-final-actions">
+      <button id="confirmVehiclesBtn" class="primary-btn" type="button">이 차량 목록으로 확정</button>
+      <button id="addVehicleBtn" class="ghost-btn" type="button">+ 차량 행 추가</button>
+    </div>
+  </section>
+
+  <!-- ───────────────────────────────────────────────── -->
+  <!-- STEP 4: 나머지 서류 업로드                        -->
+  <!-- ───────────────────────────────────────────────── -->
+  <section id="step4Card" class="panel section-card">
+    <div class="section-head">
+      <div>
+        <p class="section-kicker">STEP 4</p>
+        <h2>서류 업로드</h2>
+      </div>
+      <div class="section-actions">
+        <span class="help-chip gray">보험·등록·교통안전 등</span>
+        <button id="addMoreDocTopBtn" class="ghost-btn compact-btn" type="button">+ 파일 추가</button>
+      </div>
+    </div>
+    <p class="muted-text">
+      배정차량 파일을 제외한 나머지 서류를 올려주세요. 스캔본도 괜찮아요 —
+      다만 글자를 자동으로 읽기 어려운 이미지 중심 서류는 없는 서류로 처리하지 않고, 확인해야 할 PDF 쪽수 후보를 안내합니다.
+    </p>
+
+    <div class="upload-guide">
+      <div class="guide-group">
+        <strong>계약조건별 서류</strong>
+        <ul>
+          <li>중소기업확인서</li>
+          <li>직접생산확인증명서</li>
+        </ul>
+      </div>
+      <div class="guide-group">
+        <strong>업체 확인 서류</strong>
+        <ul>
+          <li>여객자동차 운송사업등록증</li>
+          <li>사업자등록증</li>
+          <li>직영차량 운행각서</li>
+        </ul>
+      </div>
+      <div class="guide-group">
+        <strong>차량검토 기준자료</strong>
+        <ul>
+          <li>차량보유 현황표</li>
+          <li>차량운행계획서</li>
+        </ul>
+      </div>
+      <div class="guide-group">
+        <strong>차량별 필수서류</strong>
+        <ul>
+          <li>자동차 종합보험 가입증명서</li>
+          <li>자동차등록증</li>
+          <li>자동차등록원부</li>
+          <li>전세버스 교통안전정보 조회결과 통보서</li>
+          <li>출발 전 교육 및 차량안전점검표</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="drop-zone" id="docDropZone" tabindex="0" role="button" aria-label="서류 파일 업로드">
+      <div class="drop-icon clip-friend">🖇️</div>
+      <p class="drop-main">PDF 서류를 여기에 끌어다 놓거나 클릭하세요</p>
+      <p class="drop-sub">여러 파일을 한 번에 올릴 수 있어요</p>
+      <p class="drop-pill">페이지별 진단 · 서류 위치 안내</p>
+    </div>
+    <input type="file" id="docFileInput" multiple accept=".pdf,image/*" class="hidden" />
+
+    <div id="docFileStatus" class="file-status-box empty">
+      <span class="status-empty-msg">아직 업로드된 파일이 없어요</span>
+    </div>
+
+  </section>
+
+  <!-- ───────────────────────────────────────────────── -->
+  <!-- STEP 5: 콕검 시작                                 -->
+  <!-- ───────────────────────────────────────────────── -->
+  <section id="step5Card" class="panel section-card run-card">
+    <div class="section-head">
+      <div>
+        <p class="section-kicker">STEP 5</p>
+        <h2>콕검 실행</h2>
+      </div>
+      <span id="runStatusChip" class="help-chip gray">대기 중</span>
+    </div>
+    <div class="run-box">
+      <button id="runCheckBtn" class="primary-btn run-btn disabled-state" type="button" disabled>
+        출발일을 먼저 입력해주세요
+      </button>
+      <p id="runMessage" class="muted-text run-msg">페이지별로 텍스트형/이미지형을 진단한 뒤, 자동판독이 어려운 서류는 PDF 쪽수 후보로 안내합니다.</p>
+      <div class="analysis-actionbar" aria-label="분석 실행">
+        <button id="actionOcrNeededBtn" class="ghost-btn action-ocr-btn" type="button" disabled>서류 위치 찾기</button>
+        <button id="actionExpandAllBtn" class="ghost-btn" type="button">전체 펼치기</button>
+        <button id="actionCollapseAllBtn" class="ghost-btn" type="button">전체 접기</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────────────────────────────────────────────── -->
+  <!-- 콕검 전 안내 카드                                  -->
+  <!-- ───────────────────────────────────────────────── -->
+  <section id="notCheckedYet" class="panel section-card not-yet-card">
+    <div class="not-yet-inner">
+      <p class="not-yet-icon">🔍</p>
+      <p class="not-yet-title">아직 콕검을 실행하지 않았어요</p>
+      <p class="not-yet-desc">
+        출발일 입력 → 배정차량 입력 → 차량번호 추출 확인 → 나머지 서류 업로드 → 콕검 시작
+      </p>
+    </div>
+  </section>
+
+  <!-- ───────────────────────────────────────────────── -->
+  <!-- STEP 6: 검토 결과 (콕검 후 표시)                  -->
+  <!-- ───────────────────────────────────────────────── -->
+  <div id="step6" class="hidden result-shell">
+    <div class="result-layout">
+      <aside id="resultSidebar" class="result-sidebar" aria-label="진행 단계와 결과 확인 순서">
+        <div class="result-side-title">진행 단계</div>
+        <div class="progress-side-list" aria-label="전체 진행 단계">
+          <a href="#step1Card" class="progress-side-link passed"><span>STEP 1</span>출발일</a>
+          <a href="#step2Card" class="progress-side-link passed"><span>STEP 2</span>배정차량</a>
+          <a href="#step3Card" class="progress-side-link passed"><span>STEP 3</span>차량확인</a>
+          <a href="#step4Card" class="progress-side-link passed"><span>STEP 4</span>서류업로드</a>
+          <a href="#step5Card" class="progress-side-link passed"><span>STEP 5</span>콕검 실행</a>
+          <a href="#step6" class="progress-side-link current"><span>STEP 6</span>검토 결과</a>
+        </div>
+        <div class="result-sub-title">STEP 6 결과 확인 순서</div>
+        <a href="#resultSummary" class="result-side-link active result-step-link" data-target="resultSummary"><span>6-1</span>요약</a>
+        <a href="#documentStatus" class="result-side-link result-step-link" data-target="documentStatus"><span>6-2</span>제출파일 정리</a>
+        <a href="#requiredDocs" class="result-side-link result-step-link" data-target="requiredDocs"><span>6-3</span>필요서류 확인</a>
+        <a href="#vehicleMatch" class="result-side-link result-step-link" data-target="vehicleMatch"><span>6-4</span>차량별 확인</a>
+        <a href="#supplementRequest" class="result-side-link result-step-link" data-target="supplementRequest"><span>6-5</span>보완요청</a>
+      </aside>
+      <main class="result-main">
+
+    <!-- 결과 요약 (하이라이트) -->
+    <section id="resultSummary" class="panel section-card result-highlight-card">
       <div class="section-head">
         <div>
-          <p class="section-kicker">RESULT</p>
-          <h2>검토 결과 요약</h2>
+          <p class="section-kicker">STEP 6 · 검토 결과</p>
+          <h2>검토 요약</h2>
         </div>
-        <div class="result-actions">
-          <button id="exportCsvBtn" class="small-copy" type="button">결과 CSV 내보내기</button>
-          <span id="finalStatusBadge" class="status-badge gray">대기</span>
+        <div class="result-action-row">
+          <button id="exportCsvBtn"  class="ghost-btn" type="button">결과 내보내기 (CSV)</button>
+          <button id="copyResultBtn" class="ghost-btn" type="button">결과표 복사하기</button>
         </div>
       </div>
-      <div id="summaryCards" class="summary-grid"></div>
+      <div id="summaryContent"></div>
     </section>
 
-    <!-- 서류별 제출현황 (콕검 후) -->
-    <section id="documentStatus" class="panel section-card result-panel hidden">
+    <!-- 제출파일 정리 -->
+    <section id="documentStatus" class="panel section-card result-panel">
       <div class="section-head">
-        <div>
-          <p class="section-kicker">DETAIL 1</p>
-          <h2>서류별 제출현황</h2>
-        </div>
-        <button id="copyDocTableBtn" class="small-copy" type="button">결과표 복사하기</button>
+        <h2>제출파일 정리</h2>
       </div>
+      <p class="muted-text">업로드한 PDF 파일이 어떤 서류 후보로 분류되었는지 먼저 정리합니다.</p>
       <div class="table-wrap">
-        <table class="data-table">
+        <table class="data-table result-table">
           <thead>
-            <tr><th>구분</th><th>서류명</th><th>결과</th><th>콕검 확인 내용</th><th>조치</th></tr>
+            <tr><th>서류명</th><th>상태</th><th>비고</th></tr>
           </thead>
           <tbody id="docStatusTbody"></tbody>
         </table>
       </div>
     </section>
 
-    <!-- 배정차량별 확인 (콕검 후) -->
-    <section id="vehicleMatch" class="panel section-card result-panel hidden">
+    <!-- 필요서류 확인 결과 -->
+    <section id="requiredDocs" class="panel section-card required-docs-panel required-result-panel">
       <div class="section-head">
         <div>
-          <p class="section-kicker">DETAIL 2</p>
-          <h2>배정차량별 확인</h2>
+          <p class="section-kicker">필요서류 확인</p>
+          <h2>필요서류 확인</h2>
         </div>
-        <button id="copyVehicleTableBtn" class="small-copy" type="button">차량표 복사하기</button>
+      </div>
+      <p class="muted-text">계약조건별 → 업체 확인 → 차량검토 기준자료 → 차량별 필수서류 순서로 확인합니다.</p>
+      <div id="requiredDocsContent" class="required-result-list"></div>
+    </section>
+
+    <!-- 차량별 서류 확인 -->
+    <section id="vehicleMatch" class="panel section-card result-panel">
+      <div class="section-head result-head-with-tools">
+        <div>
+          <h2>차량별 서류 확인 결과</h2>
+          <p class="muted-text">배정차량을 기준으로 제출서류에서 차량번호·보험기간·검사유효기간을 대조한 결과입니다. 자동판독이 어려운 서류는 PDF 위치 후보를 안내하니 해당 쪽을 직접 확인해주세요.</p>
+        </div>
+        <div class="result-tools">
+          <div class="filter-group" aria-label="서류 기준 필터">
+            <button class="filter-btn active" data-filter="all" type="button">전체 보기</button>
+            <button class="filter-btn" data-filter="insurance" type="button">보험만</button>
+            <button class="filter-btn" data-filter="registration" type="button">차량등록만</button>
+            <button class="filter-btn" data-filter="safety" type="button">교통안전만</button>
+            <button class="filter-btn" data-filter="precheck" type="button">점검표만</button>
+            <button class="filter-btn" data-filter="problem" type="button">문제 있는 것만</button>
+          </div>
+          <div class="detail-tools">
+            <button id="vehicleExpandAllBtn" class="ghost-btn compact-btn" type="button">전체 펼치기</button>
+            <button id="vehicleCollapseAllBtn" class="ghost-btn compact-btn" type="button">전체 접기</button>
+          </div>
+        </div>
       </div>
       <div class="table-wrap">
-        <table class="data-table wide-table">
+        <table class="data-table result-table">
           <thead>
             <tr>
-              <th>호차</th><th>차량번호</th><th>운전자</th>
-              <th>보험증명서</th><th>등록원부/등록증</th><th>교통안전정보</th>
-              <th>운전자 일치</th><th>검사유효기간</th><th>결과</th>
+              <th>호차</th><th>차량번호</th>
+              <th>보험서류</th><th>등록증/원부</th>
+              <th>교통안전정보</th><th>점검표</th><th>최종상태</th>
             </tr>
           </thead>
           <tbody id="vehicleMatchTbody"></tbody>
@@ -288,45 +438,68 @@
       </div>
     </section>
 
-    <!-- 출발 전 확인사항 (콕검 후) -->
-    <section id="departureChecklist" class="panel section-card result-panel hidden">
+    <!-- 업체 보완요청 문구 -->
+    <section id="supplementRequest" class="panel section-card supplement-card">
       <div class="section-head">
         <div>
-          <p class="section-kicker">CHECK</p>
-          <h2>출발 전 확인사항</h2>
+          <p class="section-kicker">업체 보완요청</p>
+          <h2>보완요청 문구</h2>
         </div>
-        <span class="help-chip blue">담당자 직접확인</span>
+        <button id="copyRequestBtn" class="primary-btn small-btn" type="button">보완요청 문구 복사하기</button>
       </div>
-      <p class="muted-text">서류 검토와 별도로, 차량 출발 전 아래 사항은 담당자가 직접 확인해야 합니다.</p>
-      <div id="checklistWrap" class="checklist-grid"></div>
+      <p class="muted-text">업체에 바로 보낼 수 있는 문구입니다. 직접 수정 후 복사하세요.</p>
+      <textarea id="requestText" class="supplement-textarea" rows="16"></textarea>
     </section>
 
-    <!-- 업체 보완요청 문구 (콕검 후) -->
-    <section id="supplementRequest" class="panel section-card result-panel hidden">
-      <div class="section-head">
-        <div>
-          <p class="section-kicker">COPY</p>
-          <h2>업체 보완요청 문구</h2>
+      </main>
+    </div>
+  </div><!-- /step6 -->
+
+  <!-- ───────────────────────────────────────────────── -->
+  <!-- 출발 전 확인사항 (맨 아래, 접힘)                  -->
+  <!-- ───────────────────────────────────────────────── -->
+  <section id="departureChecklist" class="panel section-card pre-check-card">
+    <details id="preCheckDetails">
+      <summary class="pre-check-summary">
+        <div class="pre-check-title-row">
+          <p class="section-kicker">출발 전</p>
+          <h2>출발 전 확인사항 <span id="preCheckCounter" class="check-counter">(0/12)</span></h2>
         </div>
-        <button id="copyRequestBtn" class="small-copy strong" type="button">보완요청 문구 복사하기</button>
+        <span class="details-caret">▾</span>
+      </summary>
+      <p class="muted-text" style="margin-top:10px">서류 검토와 별도로, 차량 출발 전 아래 사항은 담당자가 직접 확인해야 합니다.</p>
+      <div class="checklist-grid">
+        <label class="pre-check-item"><input type="checkbox" /> 출발 전 교육 및 차량안전점검표 제출</label>
+        <label class="pre-check-item"><input type="checkbox" /> 운전자격요건 확인</label>
+        <label class="pre-check-item"><input type="checkbox" /> 운전자 음주여부 확인</label>
+        <label class="pre-check-item"><input type="checkbox" /> 실제 배차 차량번호와 배정차량 리스트 일치 확인</label>
+        <label class="pre-check-item"><input type="checkbox" /> 실제 운전자와 배정 운전자 일치 확인</label>
+        <label class="pre-check-item"><input type="checkbox" /> 소화기 2개 이상 비치 확인</label>
+        <label class="pre-check-item"><input type="checkbox" /> 비상탈출용 망치 4개 이상 확인</label>
+        <label class="pre-check-item"><input type="checkbox" /> 앞바퀴 재생타이어 사용 여부 확인</label>
+        <label class="pre-check-item"><input type="checkbox" /> 안전벨트 착용 안내방송 확인</label>
+        <label class="pre-check-item"><input type="checkbox" /> 급출발·급제동 및 대열운행 금지 교육</label>
+        <label class="pre-check-item"><input type="checkbox" /> 차량 간 최소 1분 이상 간격 출발 안내</label>
+        <label class="pre-check-item"><input type="checkbox" /> 교통안전정보 통보서 진위확인</label>
       </div>
-      <textarea id="requestText" class="request-box" readonly></textarea>
-    </section>
+    </details>
+  </section>
 
-    <!-- 하단 안내 -->
-    <section class="panel notice-card">
-      <strong>안내 · v0.1.3</strong>
-      <p>버스콕검은 제출서류의 주요 항목 확인을 돕는 보조 도구입니다. 교통안전정보 통보서 진위확인, 실제 배차 차량 확인, 실제 운전자 확인, 출발 전 차량 안전점검은 담당자가 직접 확인해야 합니다. 이 앱은 법적 적합성을 최종 판정하지 않습니다.</p>
-    </section>
+  <!-- 푸터 -->
+  <footer class="site-footer">
+    <p>버스콕검은 제출서류의 주요 항목 확인을 돕는 보조 도구입니다. 교통안전정보 통보서 진위확인, 실제 배차 차량 확인, 실제 운전자 확인, 출발 전 차량 안전점검은 담당자가 직접 확인해야 합니다. 이 앱은 법적 적합성을 최종 판정하지 않습니다.</p>
+    <p>제작: <a href="https://sen-vip.github.io/bus-kockgum/" target="_blank" rel="noopener">senvip</a>
+      &nbsp;·&nbsp; 파일 내용 외부 전송 없음 &nbsp;·&nbsp; 업로드 파일 내용은 브라우저에서 분석됩니다.</p>
+  </footer>
 
-    <footer class="app-footer">
-      <p>만든 사람: <a href="https://sen-vip.github.io/bus-kockgum/" target="_blank" rel="noopener noreferrer">senvip</a> · 버스콕검 v0.1.3</p>
-      <p>브라우저에서 처리 · 외부 전송 없음 · 최종 확인은 담당자 직접 확인</p>
-    </footer>
-  </main>
+</main>
 
-  <button id="floatTopBtn" class="float-top" type="button" aria-label="맨 위로 이동">↑</button>
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="app.js"></script>
+<!-- 플로팅 맨위로 버튼 -->
+<button class="float-top scroll-top-btn" aria-label="맨 위로">↑</button>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+<script src="app.js"></script>
 </body>
 </html>
