@@ -3488,7 +3488,7 @@ body{ padding-top:var(--topbar-h)!important; }
 #requiredDocs .tree-row{
   grid-template-columns:minmax(230px,270px) minmax(0,1fr)!important;
   gap:18px!important;
-  padding:7px 0 7px 14px!important;
+  padding:7px 0 7px 20px!important;
   align-items:start!important;
 }
 #requiredDocs .question-tag{
