@@ -3281,50 +3281,73 @@ body{ padding-top:var(--topbar-h)!important; }
   }
 }
 
-/* v0.2.30: 폭질관리 = 품질관리 (현재 버전 유지, 표/카드 폭과 행 높이만 미세 정리) */
-/* 제출파일 정리 카드: 왼쪽은 정돈, 관련 페이지는 여유 확보 */
+/* v0.2.37: CSS 폭 정리본
+   - v0.2.30~v0.2.36에 누적된 중복 폭 override 제거
+   - 표/체크리스트 폭은 이 블록 한 곳에서만 관리
+   - 기존 기능/HTML 구조는 변경하지 않음
+*/
+
+/* 1) 제출파일 정리 표 ─ 파일명 / 서류 후보 / 관련 페이지 */
 .document-summary-table{
-  table-layout:fixed!important;
   width:100%!important;
+  table-layout:fixed!important;
+  border-collapse:collapse!important;
 }
-.document-summary-table th:nth-child(1),
-.document-summary-table td:nth-child(1){width:28%!important;}
-.document-summary-table th:nth-child(2),
-.document-summary-table td:nth-child(2){width:30%!important;}
-.document-summary-table th:nth-child(3),
-.document-summary-table td:nth-child(3){width:42%!important;}
 .document-summary-table th,
 .document-summary-table td{
-  padding:11px 14px!important;
+  padding:8px 12px!important;
   vertical-align:middle!important;
+  line-height:1.36!important;
+}
+.document-summary-table th{
+  font-size:12px!important;
+  font-weight:750!important;
+  color:#64748b!important;
+  background:#f2f5f9!important;
 }
 .document-summary-table td{
-  min-height:58px!important;
-  line-height:1.42!important;
+  font-size:13px!important;
+  color:#1f2937!important;
 }
+/* 요청 반영: 서류 후보 폭 추가 확대, 관련 페이지 폭 축소 */
+.document-summary-table th:nth-child(1),
+.document-summary-table td:nth-child(1){width:24%!important;}
+.document-summary-table th:nth-child(2),
+.document-summary-table td:nth-child(2){width:52%!important;}
+.document-summary-table th:nth-child(3),
+.document-summary-table td:nth-child(3){width:24%!important;}
+.document-summary-table .doc-name-cell{max-width:none!important;}
 .document-summary-table td strong{
-  font-size:13.8px!important;
-  line-height:1.32!important;
+  display:block!important;
+  max-width:100%!important;
   overflow:hidden!important;
   text-overflow:ellipsis!important;
   white-space:nowrap!important;
+  font-size:13.4px!important;
+  font-weight:650!important;
+  line-height:1.28!important;
+  color:#0f172a!important;
 }
 .document-summary-table .mini-detail{
-  margin-top:4px!important;
+  margin-top:2px!important;
   font-size:11.3px!important;
   line-height:1.2!important;
+  font-weight:450!important;
+  color:#8a97ab!important;
 }
 .doc-candidate-cell{
   color:#1f2937!important;
   font-size:12.8px!important;
+  line-height:1.34!important;
   word-break:keep-all!important;
+  overflow-wrap:anywhere!important;
 }
 .doc-candidate-cell span{
   display:block!important;
   position:relative!important;
+  margin:1px 0!important;
   padding-left:10px!important;
-  margin:2px 0!important;
-  line-height:1.38!important;
+  line-height:1.34!important;
 }
 .doc-candidate-cell span::before{
   content:'·';
@@ -3334,133 +3357,275 @@ body{ padding-top:var(--topbar-h)!important; }
   font-weight:800;
 }
 .doc-page-cell{
+  min-width:0!important;
   color:#475569!important;
-  font-size:12.8px!important;
+  font-size:12.6px!important;
 }
 .doc-page-wrap{
-  display:flex!important;
+  display:grid!important;
+  grid-template-columns:max-content minmax(0,1fr)!important;
   align-items:center!important;
-  gap:14px!important;
+  gap:8px!important;
   min-width:0!important;
-  white-space:nowrap!important;
+  white-space:normal!important;
 }
 .doc-page-pill{
-  flex:0 0 auto!important;
   display:inline-flex!important;
   align-items:center!important;
   justify-content:center!important;
-  min-height:30px!important;
-  padding:5px 13px!important;
+  min-height:26px!important;
+  padding:4px 10px!important;
   border:1px solid #d7e2f0!important;
   border-radius:999px!important;
   background:#f8fafc!important;
   color:#334155!important;
-  font-weight:750!important;
+  font-size:12.2px!important;
+  font-weight:650!important;
   line-height:1!important;
+  white-space:nowrap!important;
 }
 .doc-page-guide{
   min-width:0!important;
   overflow:hidden!important;
-  text-overflow:ellipsis!important;
+  text-overflow:clip!important;
+  display:-webkit-box!important;
+  -webkit-line-clamp:2!important;
+  -webkit-box-orient:vertical!important;
   color:#52637a!important;
-  font-weight:600!important;
+  font-size:12.4px!important;
+  font-weight:500!important;
+  line-height:1.34!important;
+  word-break:keep-all!important;
+  overflow-wrap:anywhere!important;
 }
 .page-empty-text{
   color:#64748b!important;
-  font-weight:600!important;
+  font-weight:550!important;
 }
 
-/* 업로드 직후 파일 분석 표: 과하게 넓은 파일명 칸을 줄이고 확인 위치 쪽 숨 쉴 공간 확보 */
+/* 2) 업로드 직후 파일 분석 표 ─ 파일명 / 서류종류 후보 / 페이지 진단 / 확인 위치 / 삭제 */
+.file-analysis-table{
+  width:100%!important;
+  border-radius:12px!important;
+  margin-top:8px!important;
+}
 .file-analysis-table .fat-head,
 .file-analysis-table .fat-row{
-  grid-template-columns:minmax(175px,1.2fr) minmax(132px,.9fr) minmax(158px,1.05fr) minmax(156px,1fr) 34px!important;
+  display:grid!important;
+  grid-template-columns:minmax(180px,1.08fr) minmax(210px,1.18fr) minmax(220px,1.2fr) minmax(86px,.46fr) 34px!important;
+  align-items:center!important;
 }
-.fat-row{
+.file-analysis-table .fat-head span,
+.file-analysis-table .fat-row span{
+  min-width:0!important;
+  padding:6px 9px!important;
+}
+.file-analysis-table .fat-head{
+  font-size:12px!important;
+  font-weight:750!important;
+}
+.file-analysis-table .fat-row{
   min-height:62px!important;
+  font-size:12.8px!important;
 }
-.fat-head span,
-.fat-row span{
-  padding:7px 8px!important;
-}
-.fat-row .fi-name{
+.file-analysis-table .fat-row .fi-name{
+  font-size:13px!important;
+  font-weight:620!important;
   line-height:1.25!important;
   word-break:keep-all!important;
   overflow-wrap:anywhere!important;
 }
-.page-diag-chip,
-.diag-candidates{
-  max-width:150px!important;
+.file-analysis-table .fat-row .fi-name em{
+  margin-top:2px!important;
+  font-size:11.2px!important;
+  line-height:1.15!important;
+  font-weight:450!important;
+  color:#8a9ab1!important;
 }
+.file-analysis-table .fat-row > span:nth-child(2){
+  line-height:1.32!important;
+  word-break:keep-all!important;
+  overflow-wrap:anywhere!important;
+}
+.fat-diag-cell{
+  display:flex!important;
+  align-items:center!important;
+  gap:7px!important;
+  flex-wrap:nowrap!important;
+  min-width:0!important;
+}
+.fat-diag-cell .page-diag-chip,
+.fat-diag-cell .analysis-pill{
+  flex:0 0 auto!important;
+  margin:0!important;
+}
+.fat-diag-cell .diag-candidates{display:none!important;}
+.file-analysis-table .page-diag-chip{
+  max-width:126px!important;
+  padding:4px 6px!important;
+  border-radius:9px!important;
+  font-size:10.5px!important;
+  font-weight:650!important;
+  line-height:1.18!important;
+}
+.file-analysis-table .analysis-pill{
+  min-height:22px!important;
+  padding:3px 7px!important;
+  font-size:10.8px!important;
+  font-weight:650!important;
+}
+.file-analysis-table .fat-row > span:nth-child(4) .analysis-pill{
+  max-width:86px!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+}
+.file-analysis-table .fat-actions{justify-content:center!important;}
 
-/* 서류 상세 Q&A: 질문 pill 폭은 줄이고 답변 영역을 넓게 */
-#requiredDocs .compact-tree{
-  padding:4px 18px 14px 42px!important;
-}
+/* 3) 필요서류 체크리스트 상세 Q&A ─ 질문 딱지 / 설명문 폭 */
+#requiredDocs .compact-tree{padding-left:0!important;}
+#requiredDocs .tree-row{padding-left:0!important;}
 #requiredDocs .compact-tree .tree-row,
 #requiredDocs .tree-row{
-  grid-template-columns:minmax(160px,190px) minmax(0,1fr)!important;
+  grid-template-columns:minmax(230px,270px) minmax(0,1fr)!important;
   gap:18px!important;
-  padding:8px 0!important;
+  padding:7px 0 7px 14px!important;
+  align-items:start!important;
 }
 #requiredDocs .question-tag{
-  max-width:max-content!important;
-  white-space:nowrap!important;
+  width:max-content!important;
+  max-width:100%!important;
+  padding:4px 13px!important; /* 질문 딱지 앞쪽 여백 확대 */
+  border-radius:999px!important;
   font-size:12.5px!important;
-  line-height:1.2!important;
+  font-weight:650!important;
+  line-height:1.25!important;
+  white-space:nowrap!important;
+  background:#f8fafc!important;
+  border-color:#e2e8f0!important;
+  color:#334155!important;
 }
 #requiredDocs .tree-row p{
   min-width:0!important;
+  margin:0!important;
   font-size:13px!important;
-  line-height:1.45!important;
+  line-height:1.42!important;
   word-break:keep-all!important;
   overflow-wrap:anywhere!important;
 }
 
-/* 차량별 체크 표: 1열은 줄이고, 가운데 설명/오른쪽 위치 컬럼을 안정적으로 확보 */
+/* 4) 차량별 체크리스트 ─ 확인 칸 축소 / 설명문·관련 위치 확대 / 행 높이 축소 */
 .vehicle-check-line{
-  grid-template-columns:auto minmax(172px,.72fr) minmax(270px,1.28fr) minmax(220px,1fr)!important;
-  gap:12px!important;
-  padding:10px 14px!important;
-  min-height:54px!important;
+  display:grid!important;
+  grid-template-columns:auto minmax(230px,.78fr) minmax(380px,1.22fr) minmax(260px,.96fr)!important;
+  gap:10px!important;
+  align-items:center!important;
+  min-height:48px!important;
+  padding:8px 18px 8px 22px!important;
+  font-size:13px!important;
+}
+.vehicle-check-line input{
+  width:14px!important;
+  height:14px!important;
+  margin:0!important;
+  flex:0 0 auto!important;
 }
 .vehicle-check-title{
+  min-width:0!important;
+  display:flex!important;
+  align-items:center!important;
   gap:6px!important;
-  line-height:1.35!important;
+  flex-wrap:nowrap!important;
+  white-space:nowrap!important;
+  line-height:1.32!important;
+}
+.vehicle-check-title .status-badge{
+  flex:0 0 auto!important;
+  white-space:nowrap!important;
 }
 .vehicle-check-help{
-  font-size:13px!important;
-  line-height:1.42!important;
+  min-width:0!important;
   color:#40516a!important;
+  font-size:13px!important;
+  line-height:1.38!important;
   word-break:keep-all!important;
   overflow-wrap:anywhere!important;
 }
 .vehicle-check-location{
-  font-size:13px!important;
-  line-height:1.42!important;
+  min-width:0!important;
   color:#52637a!important;
-  white-space:nowrap!important;
+  font-size:13px!important;
+  line-height:1.36!important;
+  white-space:normal!important;
   overflow:hidden!important;
-  text-overflow:ellipsis!important;
+  text-overflow:clip!important;
+  display:-webkit-box!important;
+  -webkit-line-clamp:2!important;
+  -webkit-box-orient:vertical!important;
+  word-break:keep-all!important;
+  overflow-wrap:anywhere!important;
 }
 
+/* 5) 출발 전 확인사항 설명문 ─ 기존 카드 패딩과 맞춤 */
+.pre-check-card details > .muted-text{
+  display:block!important;
+  box-sizing:border-box!important;
+  margin:10px 0 0!important;
+  padding:0 18px!important;
+  line-height:1.5!important;
+  word-break:keep-all!important;
+  overflow-wrap:anywhere!important;
+}
+
+/* 6) 반응형: 모바일에서는 표/체크리스트를 한 줄 카드형으로 */
 @media (max-width:900px){
-  .document-summary-table th,
-  .document-summary-table td{padding:10px 11px!important;}
-  .doc-page-wrap{gap:8px!important;align-items:flex-start!important;flex-direction:column!important;white-space:normal!important;}
   #requiredDocs .compact-tree .tree-row,
-  #requiredDocs .tree-row{grid-template-columns:1fr!important;gap:4px!important;}
-  .vehicle-check-line{grid-template-columns:auto 1fr!important;align-items:flex-start!important;}
+  #requiredDocs .tree-row{
+    grid-template-columns:1fr!important;
+    gap:4px!important;
+  }
+  .vehicle-check-line{
+    grid-template-columns:auto 1fr!important;
+    align-items:flex-start!important;
+    padding:9px 12px!important;
+  }
   .vehicle-check-help,
-  .vehicle-check-location{grid-column:2!important;white-space:normal!important;}
+  .vehicle-check-location{
+    grid-column:2!important;
+    white-space:normal!important;
+  }
+  .doc-page-wrap{
+    grid-template-columns:1fr!important;
+    align-items:flex-start!important;
+    gap:6px!important;
+  }
 }
 @media (max-width:760px){
+  .file-analysis-table .fat-head{display:none!important;}
+  .file-analysis-table .fat-row{
+    grid-template-columns:1fr!important;
+    min-height:auto!important;
+    padding:9px 10px!important;
+  }
+  .fat-diag-cell{flex-wrap:wrap!important;}
+  .fat-diag-cell .diag-candidates{display:block!important;}
   .document-summary-table,
   .document-summary-table thead,
   .document-summary-table tbody,
   .document-summary-table tr,
-  .document-summary-table td{display:block!important;width:100%!important;}
+  .document-summary-table td{
+    display:block!important;
+    width:100%!important;
+  }
   .document-summary-table thead{display:none!important;}
-  .document-summary-table tr{border-top:1px solid #edf2f8!important;padding:8px 0!important;}
+  .document-summary-table tr{
+    border-top:1px solid #edf2f8!important;
+    padding:8px 0!important;
+  }
   .document-summary-table tr:first-child{border-top:0!important;}
-  .document-summary-table td{border:0!important;min-height:0!important;padding:6px 10px!important;}
+  .document-summary-table td{
+    border:0!important;
+    min-height:0!important;
+    padding:6px 10px!important;
+  }
+  .document-summary-table td strong{white-space:normal!important;}
 }

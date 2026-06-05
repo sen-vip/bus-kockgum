@@ -521,7 +521,7 @@ function renderDocFileList() {
     html += `<div class="fat-row">
       <span class="fi-name" title="${escapeHtml(a.name)}">${escapeHtml(a.name)} <em>${formatBytes(a.size)}</em></span>
       <span>${escapeHtml(docTypeLabel(a.type))}</span>
-      <span>${pageDiagSummary(a)}<br>${analysisStatusPill(a.textStatus)}</span>
+      <span class="fat-diag-cell">${pageDiagSummary(a)}${analysisStatusPill(a.textStatus)}</span>
       <span>${locChip}</span>
       <span class="fat-actions"><button class="btn-icon-x" onclick="removeDocFile(${i})" title="삭제">×</button></span>
     </div>`;
