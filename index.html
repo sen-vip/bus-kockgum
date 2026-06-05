@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>버스콕검 v0.2.14 — 전세버스 임차 서류 확인 도구</title>
+  <title>버스콕검 v0.2.25 — 전세버스 임차 서류 확인 도구</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -15,7 +15,7 @@
 <header id="topbar" class="topbar">
   <div class="topbar-brand">
     <a href="#top" class="brand-link">🚌 버스콕검</a>
-    <span class="version-tag">v0.2.14</span>
+    <span class="version-tag">v0.2.25</span>
   </div>
 
   <!-- 6단계 네비 -->
@@ -40,6 +40,14 @@
     <button class="toplink scroll-top-btn" aria-label="맨 위로">↑</button>
   </div>
 </header>
+<div id="mobileStepbar" class="mobile-stepbar" aria-label="모바일 진행 단계">
+  <div class="mobile-stepbar-row">
+    <strong id="mobileStepText">1 / 6 출발일 확인</strong>
+    <span id="mobileStepPercent">17%</span>
+  </div>
+  <div class="mobile-stepbar-track" aria-hidden="true"><span id="mobileStepFill" style="width:17%"></span></div>
+</div>
+
 <!-- 왼쪽 진행 단계 사이드바: 처음부터 항상 표시 -->
 <aside id="globalStepSidebar" class="global-step-sidebar" aria-label="전체 진행 단계">
   <div class="result-side-title">진행 단계</div>
@@ -55,9 +63,8 @@
     <div class="result-sub-title">결과 확인 순서</div>
     <a href="#resultSummary" class="result-side-link result-step-link" data-target="resultSummary"><span>6-1</span>요약</a>
     <a href="#documentStatus" class="result-side-link result-step-link" data-target="documentStatus"><span>6-2</span>제출파일 정리</a>
-    <a href="#requiredDocs" class="result-side-link result-step-link" data-target="requiredDocs"><span>6-3</span>필요서류 확인</a>
-    <a href="#vehicleMatch" class="result-side-link result-step-link" data-target="vehicleMatch"><span>6-4</span>차량별 확인</a>
-    <a href="#supplementRequest" class="result-side-link result-step-link" data-target="supplementRequest"><span>6-5</span>보완요청</a>
+    <a href="#requiredDocs" class="result-side-link result-step-link" data-target="requiredDocs"><span>6-3</span>필요서류 체크</a>
+    <a href="#supplementRequest" class="result-side-link result-step-link" data-target="supplementRequest"><span>6-4</span>보완요청</a>
   </div>
 </aside>
 
@@ -72,10 +79,10 @@
         <span class="bus-shadow"></span>
       </div>
       <div class="hero-copy">
-        <p class="eyebrow">배정차량 리스트 기준 확인 · v0.2.14</p>
+        <p class="eyebrow">배정차량 리스트 기준 확인 · v0.2.25</p>
         <h1 class="hero-title">버스콕검</h1>
-        <p class="hero-subtitle">전세버스 임차 서류 확인 도구</p>
-        <p class="hero-desc">업체 제출서류를 업로드하면 배정차량 리스트 기준으로 필수서류 · 차량번호 · 보험기간 · 검사유효기간을 한 번에 정리합니다. 자동 판정이 아니라, 담당자가 무엇을 확인해야 하는지 안내하는 도구입니다.</p>
+        <p class="hero-subtitle">전세버스 임차 서류 체크리스트</p>
+        <p class="hero-desc">자동판독 결과를 바탕으로, 담당자가 직접 확인할 서류를 체크리스트로 정리해줍니다. 자동 판정이 아니라, 놓치기 쉬운 확인 항목을 순서대로 체크하는 검토 보조 도구입니다.</p>
         <div class="hero-chips" aria-label="주요 기능">
           <span class="hero-chip">📋 배정차량 기준 확인</span>
           <span class="hero-chip">✍️ 보완요청 자동작성</span>
@@ -316,8 +323,6 @@
       <p id="runMessage" class="muted-text run-msg">페이지별로 텍스트형/이미지형을 진단한 뒤, 자동판독이 어려운 서류는 PDF 쪽수 후보로 안내합니다.</p>
       <div class="analysis-actionbar" aria-label="분석 실행">
         <button id="actionOcrNeededBtn" class="ghost-btn action-ocr-btn" type="button" disabled>서류 위치 찾기</button>
-        <button id="actionExpandAllBtn" class="ghost-btn" type="button">전체 펼치기</button>
-        <button id="actionCollapseAllBtn" class="ghost-btn" type="button">전체 접기</button>
       </div>
     </div>
   </section>
@@ -340,23 +345,8 @@
   <!-- ───────────────────────────────────────────────── -->
   <div id="step6" class="hidden result-shell">
     <div class="result-layout">
-      <aside id="resultSidebar" class="result-sidebar" aria-label="진행 단계와 결과 확인 순서">
-        <div class="result-side-title">진행 단계</div>
-        <div class="progress-side-list" aria-label="전체 진행 단계">
-          <a href="#step1Card" class="progress-side-link passed"><span>STEP 1</span>출발일</a>
-          <a href="#step2Card" class="progress-side-link passed"><span>STEP 2</span>배정차량</a>
-          <a href="#step3Card" class="progress-side-link passed"><span>STEP 3</span>차량확인</a>
-          <a href="#step4Card" class="progress-side-link passed"><span>STEP 4</span>서류업로드</a>
-          <a href="#step5Card" class="progress-side-link passed"><span>STEP 5</span>콕검 실행</a>
-          <a href="#step6" class="progress-side-link current"><span>STEP 6</span>검토 결과</a>
-        </div>
-        <div class="result-sub-title">STEP 6 결과 확인 순서</div>
-        <a href="#resultSummary" class="result-side-link active result-step-link" data-target="resultSummary"><span>6-1</span>요약</a>
-        <a href="#documentStatus" class="result-side-link result-step-link" data-target="documentStatus"><span>6-2</span>제출파일 정리</a>
-        <a href="#requiredDocs" class="result-side-link result-step-link" data-target="requiredDocs"><span>6-3</span>필요서류 확인</a>
-        <a href="#vehicleMatch" class="result-side-link result-step-link" data-target="vehicleMatch"><span>6-4</span>차량별 확인</a>
-        <a href="#supplementRequest" class="result-side-link result-step-link" data-target="supplementRequest"><span>6-5</span>보완요청</a>
-      </aside>
+      <!-- 결과 단계는 왼쪽 붙박이 진행단계 바에서만 표시합니다. -->
+
       <main class="result-main">
 
     <!-- 결과 요약 (하이라이트) -->
@@ -375,80 +365,57 @@
     </section>
 
     <!-- 제출파일 정리 -->
-    <section id="documentStatus" class="panel section-card result-panel">
-      <div class="section-head">
-        <h2>제출파일 정리</h2>
-      </div>
-      <p class="muted-text">업로드한 PDF 파일이 어떤 서류 후보로 분류되었는지 먼저 정리합니다.</p>
-      <div class="table-wrap">
-        <table class="data-table result-table">
-          <thead>
-            <tr><th>서류명</th><th>상태</th><th>비고</th></tr>
-          </thead>
-          <tbody id="docStatusTbody"></tbody>
-        </table>
-      </div>
+    <section id="documentStatus" class="panel section-card result-panel compact-result-panel">
+      <details id="documentStatusDetails" class="compact-details">
+        <summary class="compact-summary">
+          <div>
+            <p class="section-kicker">참고용</p>
+            <h2>제출파일 정리</h2>
+            <p class="muted-text">업로드한 파일이 어떤 서류 후보로 분류되었는지 참고용으로 정리합니다.</p>
+          </div>
+          <span class="details-caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="table-wrap compact-table-wrap">
+          <table class="data-table result-table document-summary-table">
+            <thead>
+              <tr><th>파일명</th><th>서류 후보</th><th>관련 페이지</th></tr>
+            </thead>
+            <tbody id="docStatusTbody"></tbody>
+          </table>
+        </div>
+      </details>
     </section>
 
-    <!-- 필요서류 확인 결과 -->
+    <!-- 필요서류 체크리스트 -->
     <section id="requiredDocs" class="panel section-card required-docs-panel required-result-panel">
       <div class="section-head">
         <div>
-          <p class="section-kicker">필요서류 확인</p>
-          <h2>필요서류 확인</h2>
+          <p class="section-kicker">체크리스트</p>
+          <h2>필요서류 체크리스트</h2>
         </div>
       </div>
-      <p class="muted-text">계약조건별 → 업체 확인 → 차량검토 기준자료 → 차량별 필수서류 순서로 확인합니다.</p>
+      <p class="muted-text">서류종류를 먼저 확인한 뒤, 배정차량별로 차량번호와 운전자까지 체크하세요.</p>
       <div id="requiredDocsContent" class="required-result-list"></div>
-    </section>
-
-    <!-- 차량별 서류 확인 -->
-    <section id="vehicleMatch" class="panel section-card result-panel">
-      <div class="section-head result-head-with-tools">
-        <div>
-          <h2>차량별 서류 확인 결과</h2>
-          <p class="muted-text">배정차량을 기준으로 제출서류에서 차량번호·보험기간·검사유효기간을 대조한 결과입니다. 자동판독이 어려운 서류는 PDF 위치 후보를 안내하니 해당 쪽을 직접 확인해주세요.</p>
-        </div>
-        <div class="result-tools">
-          <div class="filter-group" aria-label="서류 기준 필터">
-            <button class="filter-btn active" data-filter="all" type="button">전체 보기</button>
-            <button class="filter-btn" data-filter="insurance" type="button">보험만</button>
-            <button class="filter-btn" data-filter="registration" type="button">차량등록만</button>
-            <button class="filter-btn" data-filter="safety" type="button">교통안전만</button>
-            <button class="filter-btn" data-filter="precheck" type="button">점검표만</button>
-            <button class="filter-btn" data-filter="problem" type="button">문제 있는 것만</button>
-          </div>
-          <div class="detail-tools">
-            <button id="vehicleExpandAllBtn" class="ghost-btn compact-btn" type="button">전체 펼치기</button>
-            <button id="vehicleCollapseAllBtn" class="ghost-btn compact-btn" type="button">전체 접기</button>
-          </div>
-        </div>
-      </div>
-      <div class="table-wrap">
-        <table class="data-table result-table">
-          <thead>
-            <tr>
-              <th>호차</th><th>차량번호</th>
-              <th>보험서류</th><th>등록증/원부</th>
-              <th>교통안전정보</th><th>점검표</th><th>최종상태</th>
-            </tr>
-          </thead>
-          <tbody id="vehicleMatchTbody"></tbody>
-        </table>
-      </div>
     </section>
 
     <!-- 업체 보완요청 문구 -->
     <section id="supplementRequest" class="panel section-card supplement-card">
-      <div class="section-head">
-        <div>
-          <p class="section-kicker">업체 보완요청</p>
-          <h2>보완요청 문구</h2>
+      <details id="supplementDetails">
+        <summary class="supplement-summary">
+          <div class="pre-check-title-row">
+            <p class="section-kicker">업체 보완요청</p>
+            <h2>보완요청 문구</h2>
+          </div>
+          <div class="supplement-actions">
+            <button id="copyRequestBtn" class="primary-btn small-btn" type="button" onclick="event.stopPropagation();">보완요청 문구 복사하기</button>
+            <span class="details-caret" aria-hidden="true">▾</span>
+          </div>
+        </summary>
+        <div id="supplementBody" class="supplement-body">
+          <p class="muted-text">업체에 바로 보낼 수 있는 문구입니다. 직접 수정 후 복사하세요.</p>
+          <textarea id="requestText" class="supplement-textarea" rows="16"></textarea>
         </div>
-        <button id="copyRequestBtn" class="primary-btn small-btn" type="button">보완요청 문구 복사하기</button>
-      </div>
-      <p class="muted-text">업체에 바로 보낼 수 있는 문구입니다. 직접 수정 후 복사하세요.</p>
-      <textarea id="requestText" class="supplement-textarea" rows="16"></textarea>
+      </details>
     </section>
 
       </main>
