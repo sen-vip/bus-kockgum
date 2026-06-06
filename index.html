@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>버스콕검 v0.2.25 — 전세버스 임차 서류 확인 도구</title>
+  <title>버스콕검 v0.2.42 — 전세버스 임차 서류 확인 도구</title>
 
   <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
   <link rel="stylesheet" href="style.css" />
@@ -17,7 +17,7 @@
 <header id="topbar" class="topbar">
   <div class="topbar-brand">
     <a href="#top" class="brand-link">🚌 버스콕검</a>
-    <span class="version-tag">v0.2.25</span>
+    <span class="version-tag">v0.2.42</span>
   </div>
 
   <!-- 6단계 네비 -->
@@ -37,9 +37,9 @@
 
   <div class="topbar-right">
     <span class="safe-chip">🛡 파일 내용 외부 전송 없음</span>
-    <a href="https://sen-vip.github.io/bus-kockgum/" target="_blank" rel="noopener" class="github-chip">github</a>
     <button id="resetAllBtn" class="reset-all-btn" type="button" title="전체 입력 초기화">초기화</button>
     <button class="toplink scroll-top-btn" aria-label="맨 위로">↑</button>
+    <a href="https://github.com/sen-vip/bus-kockgum" target="_blank" rel="noopener" class="github-chip">GitHub</a>
   </div>
 </header>
 <div id="mobileStepbar" class="mobile-stepbar" aria-label="모바일 진행 단계">
@@ -66,7 +66,6 @@
     <a href="#resultSummary" class="result-side-link result-step-link" data-target="resultSummary"><span>6-1</span>요약</a>
     <a href="#documentStatus" class="result-side-link result-step-link" data-target="documentStatus"><span>6-2</span>제출파일 정리</a>
     <a href="#requiredDocs" class="result-side-link result-step-link" data-target="requiredDocs"><span>6-3</span>필요서류 체크</a>
-    <a href="#supplementRequest" class="result-side-link result-step-link" data-target="supplementRequest"><span>6-4</span>보완요청</a>
   </div>
 </aside>
 
@@ -81,13 +80,12 @@
         <span class="bus-shadow"></span>
       </div>
       <div class="hero-copy">
-        <p class="eyebrow">배정차량 리스트 기준 확인 · v0.2.25</p>
+        <p class="eyebrow">배정차량 리스트 기준 확인 · v0.2.42</p>
         <h1 class="hero-title">버스콕검</h1>
         <p class="hero-subtitle">전세버스 임차 서류 체크리스트</p>
         <p class="hero-desc">제출한 서류에서 확인이 필요한 항목을 체크리스트로 정리해드려요. 담당자가 놓치기 쉬운 부분을 순서대로 확인할 수 있도록 돕는 검토 보조 도구입니다. </p>
         <div class="hero-chips" aria-label="주요 기능">
           <span class="hero-chip">📋 배정차량 기준 확인</span>
-          <span class="hero-chip">✍️ 보완요청 자동작성</span>
           <span class="hero-chip">📄 PDF 쪽수 안내</span>
         </div>
       </div>
@@ -131,7 +129,7 @@
     <details class="optional-block" id="optionalDetails">
       <summary class="optional-summary">
         선택 정보
-        <span class="optional-hint">입력하면 보완요청 문구가 더 자연스러워져요</span>
+        <span class="optional-hint">입력하면 결과 안내가 더 자연스러워져요</span>
         <span class="details-caret">▾</span>
       </summary>
       <div class="optional-grid">
@@ -176,7 +174,7 @@
       </div>
     </div>
     <p class="muted-text">
-      차량 및 운전기사 배정 현황, 차량운행계획서 등 <strong>차량번호가 있는 파일</strong>을 먼저 올려주세요. 파일이 없으면 직접 입력해도 됩니다.
+      차량 및 운전기사 배정 현황표 등 <strong>차량번호가 있는 기준자료</strong>를 먼저 올려주세요. 파일이 없으면 직접 입력해도 됩니다.
     </p>
 
     <div class="drop-zone" id="assignDropZone" tabindex="0" role="button" aria-label="배정차량 입력">
@@ -277,16 +275,15 @@
       <div class="guide-group">
         <strong>차량검토 기준자료</strong>
         <ul>
-          <li>차량보유 현황표</li>
-          <li>차량운행계획서</li>
+          <li>차량 및 운전기사 배정 현황표</li>
+          <li>차량보유 현황표 <span class="guide-note">(선택 구비서류)</span></li>
         </ul>
       </div>
       <div class="guide-group">
         <strong>차량별 필수서류</strong>
         <ul>
-          <li>자동차 종합보험 가입증명서</li>
-          <li>자동차등록증</li>
           <li>자동차등록원부</li>
+          <li>자동차 종합보험 가입증명서</li>
           <li>전세버스 교통안전정보 조회결과 통보서</li>
           <li>출발 전 교육 및 차량안전점검표</li>
         </ul>
@@ -297,7 +294,7 @@
       <div class="drop-icon clip-friend">🖇️</div>
       <p class="drop-main">PDF 서류를 여기에 끌어다 놓거나 클릭하세요</p>
       <p class="drop-sub">여러 파일을 한 번에 올릴 수 있어요</p>
-      <p class="drop-pill">페이지별 진단 · 서류 위치 안내</p>
+      <p class="drop-pill">텍스트 우선 · 필요 시 자동판독</p>
     </div>
     <input type="file" id="docFileInput" multiple accept=".pdf,image/*" class="hidden" />
 
@@ -322,10 +319,7 @@
       <button id="runCheckBtn" class="primary-btn run-btn disabled-state" type="button" disabled>
         출발일을 먼저 입력해주세요
       </button>
-      <p id="runMessage" class="muted-text run-msg">페이지별로 텍스트형/이미지형을 진단한 뒤, 자동판독이 어려운 서류는 PDF 쪽수 후보로 안내합니다.</p>
-      <div class="analysis-actionbar" aria-label="분석 실행">
-        <button id="actionOcrNeededBtn" class="ghost-btn action-ocr-btn" type="button" disabled>서류 위치 찾기</button>
-      </div>
+      <p id="runMessage" class="muted-text run-msg">텍스트형 PDF를 먼저 분석하고, 필요한 경우 체크리스트에서 자동판독 보완을 선택할 수 있어요.</p>
     </div>
   </section>
 
@@ -366,6 +360,11 @@
       <div id="summaryContent"></div>
     </section>
 
+    <!-- 자동판독 보완 -->
+    <section id="ocrAssistPanel" class="panel section-card ocr-assist-panel hidden">
+      <div id="ocrAssistContent"></div>
+    </section>
+
     <!-- 제출파일 정리 -->
     <section id="documentStatus" class="panel section-card result-panel compact-result-panel">
       <details id="documentStatusDetails" class="compact-details">
@@ -400,25 +399,7 @@
       <div id="requiredDocsContent" class="required-result-list"></div>
     </section>
 
-    <!-- 업체 보완요청 문구 -->
-    <section id="supplementRequest" class="panel section-card supplement-card">
-      <details id="supplementDetails">
-        <summary class="supplement-summary">
-          <div class="pre-check-title-row">
-            <p class="section-kicker">업체 보완요청</p>
-            <h2>보완요청 문구</h2>
-          </div>
-          <div class="supplement-actions">
-            <button id="copyRequestBtn" class="primary-btn small-btn" type="button" onclick="event.stopPropagation();">보완요청 문구 복사하기</button>
-            <span class="details-caret" aria-hidden="true">▾</span>
-          </div>
-        </summary>
-        <div id="supplementBody" class="supplement-body">
-          <p class="muted-text">업체에 바로 보낼 수 있는 문구입니다. 직접 수정 후 복사하세요.</p>
-          <textarea id="requestText" class="supplement-textarea" rows="16"></textarea>
-        </div>
-      </details>
-    </section>
+
 
       </main>
     </div>
@@ -438,8 +419,8 @@
       </summary>
       <p class="muted-text" style="margin-top:10px">서류 검토와 별도로, 차량 출발 전 아래 사항은 담당자가 직접 확인해야 합니다.</p>
       <div class="checklist-grid">
-        <label class="pre-check-item"><input type="checkbox" /> 출발 전 교육 및 차량안전점검표 제출</label>
-        <label class="pre-check-item"><input type="checkbox" /> 운전자격요건 확인</label>
+        <label class="pre-check-item"><input type="checkbox" /> 출발 전 점검표 제출</label>
+        <label class="pre-check-item pre-check-item-inline"><input type="checkbox" /> <span class="pre-check-main">운전자격요건 확인</span><span class="pre-check-helper">(운전면허증 또는 버스에 게시된 ‘버스운전자격증명’으로도 확인 가능)</span></label>
         <label class="pre-check-item"><input type="checkbox" /> 운전자 음주여부 확인</label>
         <label class="pre-check-item"><input type="checkbox" /> 실제 배차 차량번호와 배정차량 리스트 일치 확인</label>
         <label class="pre-check-item"><input type="checkbox" /> 실제 운전자와 배정 운전자 일치 확인</label>
@@ -454,10 +435,32 @@
     </details>
   </section>
 
+  <!-- 업체 보완요청 문구 (출발 전 확인사항 아래, 기본 접힘) -->
+  <section id="supplementRequest" class="panel section-card supplement-card">
+    <details id="supplementDetails">
+      <summary class="supplement-summary">
+        <div>
+          <p class="section-kicker">업체 안내</p>
+          <h2>업체 보완요청 문구 추천</h2>
+          <p class="muted-text">콕검 실행 후 확인·보완이 필요한 항목을 문장으로 정리합니다.</p>
+        </div>
+        <span class="details-caret">▾</span>
+      </summary>
+      <div class="supplement-body">
+        <div class="supplement-actions supplement-actions-top">
+          <button id="copyRequestBtn" class="btn-sm-ghost" type="button">문구 복사</button>
+        </div>
+        <textarea id="requestText" class="request-textarea" rows="10" placeholder="콕검 실행 후 업체에 보낼 보완요청 문구가 자동으로 추천됩니다. 자동판독 보완을 실행하면 문구도 다시 정리됩니다."></textarea>
+        <p class="muted-text supplement-help">필요하면 담당자 상황에 맞게 문구를 직접 수정한 뒤 복사해서 사용하세요.</p>
+      </div>
+    </details>
+  </section>
+
+
   <!-- 푸터 -->
   <footer class="site-footer">
     <p>버스콕검은 제출서류의 주요 항목 확인을 돕는 보조 도구입니다. 교통안전정보 통보서 진위확인, 실제 배차 차량 확인, 실제 운전자 확인, 출발 전 차량 안전점검은 담당자가 직접 확인해야 합니다. 이 앱은 법적 적합성을 최종 판정하지 않습니다.</p>
-    <p>제작: <a href="https://sen-vip.github.io/bus-kockgum/" target="_blank" rel="noopener">senvip</a>
+    <p>제작: <a href="https://github.com/sen-vip/bus-kockgum" target="_blank" rel="noopener">senvip</a>
       &nbsp;·&nbsp; 파일 내용 외부 전송 없음 &nbsp;·&nbsp; 업로드 파일 내용은 브라우저에서 분석됩니다.</p>
   </footer>
 
