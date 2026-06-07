@@ -1894,6 +1894,12 @@ function renderRequiredChecklist() {
 
   const itemHtml = (r, idx) => {
     const location = missingLocationText(r.location || '');
+    const isDirectProd = r.name === '직접생산확인증명서';
+    const smppGuide = isDirectProd ? `
+      <span class="smpp-guide-box">
+        <span class="smpp-guide-text">제출파일에서 확인되지 않더라도 <strong>공공구매종합정보망(SMPP) &gt; 직접생산확인 조회</strong>에서 업체명 또는 사업자등록번호로 조회 후 증명서를 확인·출력할 수 있습니다.</span>
+        <a class="smpp-guide-link" href="https://www.smpp.go.kr/cop/dpcnfrmn/selectDpCnfrmnListVw.do" target="_blank" rel="noopener noreferrer">공공구매종합정보망(SMPP)에서 직접생산확인 조회하기 ↗</a>
+      </span>` : '';
     return `<details class="checklist-doc-item status-${statusClass(r.status)}">
       <summary class="checklist-doc-summary">
         <label class="check-box-label" onclick="event.stopPropagation();">
@@ -1905,7 +1911,7 @@ function renderRequiredChecklist() {
         </span>
       </summary>
       <div class="required-doc-tree compact-tree">
-        <div class="tree-row"><span class="question-tag">이 서류는 어디에 있나요?</span><p>${escapeHtml(location)}</p></div>
+        <div class="tree-row"><span class="question-tag">이 서류는 어디에 있나요?</span><p>${escapeHtml(location)}${smppGuide}</p></div>
         <div class="tree-row"><span class="question-tag">이 서류에서 뭘 봐야 하나요?</span><p>${escapeHtml(r.check)}</p></div>
         <div class="tree-row"><span class="question-tag">담당자는 뭘 하면 되나요?</span><p>${escapeHtml(r.action)}</p></div>
       </div>
@@ -2453,7 +2459,7 @@ function refreshManualCheckedVisual(root = document) {
 
 // ── 이벤트 바인딩 ────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  document.title = `버스콕검 ${VERSION} — 전세버스 임차 서류 확인 도구`;
+  document.title = `버스콕검 ${VERSION} — 전세버스 임차 서류 콕 검토 도구`;
   $$('.version-tag').forEach(el => { el.textContent = VERSION; });
   $$('.eyebrow').forEach(el => { el.textContent = `배정차량 리스트 기준 확인 · ${VERSION}`; });
   $$('.safe-chip').forEach(el => { el.textContent = '🛡 파일 내용 외부 전송 없음'; });

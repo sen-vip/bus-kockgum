@@ -615,7 +615,7 @@ details[open] .details-caret { transform: rotate(180deg); }
   opacity: 1 !important;
   font-size: .88rem !important;
   line-height: 1.55 !important;
-  max-width: 760px;
+  max-width: 720px;
 }
 .hero-chips {
   display: flex;
@@ -4057,5 +4057,52 @@ body.ocr-busy-lock{overflow:hidden;}
   }
   .vehicle-check-title{
     white-space:normal;
+  }
+}
+
+
+/* v0.2.39: 필요서류 설명 시작선 정렬 + 직접생산확인증명서 SMPP 안내 */
+#requiredDocs .required-doc-tree.compact-tree{
+  padding:4px 16px 14px 42px!important;
+}
+#requiredDocs .required-doc-tree.compact-tree .tree-row,
+#requiredDocs .compact-tree .tree-row{
+  padding-left:0!important;
+}
+#requiredDocs .smpp-guide-box{
+  display:block;
+  margin-top:8px;
+  padding:10px 12px;
+  border:1px solid #dbe6f5;
+  border-radius:12px;
+  background:#fbfdff;
+  color:#475569;
+  font-size:12.8px;
+  line-height:1.5;
+}
+#requiredDocs .smpp-guide-text{
+  display:block;
+  margin-bottom:7px;
+}
+#requiredDocs .smpp-guide-link{
+  display:inline-flex;
+  align-items:center;
+  min-height:28px;
+  padding:5px 10px;
+  border:1px solid #cfe0ff;
+  border-radius:999px;
+  background:#fff;
+  color:#2563eb;
+  font-size:12.5px;
+  font-weight:650;
+  text-decoration:none;
+}
+#requiredDocs .smpp-guide-link:hover{
+  background:#f7fbff;
+  text-decoration:none;
+}
+@media (max-width:900px){
+  #requiredDocs .required-doc-tree.compact-tree{
+    padding:4px 14px 14px 42px!important;
   }
 }
